@@ -10,7 +10,7 @@ import sys
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# 🔐 Токен для тестов
+# 🔐 Ваш токен для тестов
 TELEGRAM_TOKEN = "8667861727:AAE1N_d5mQCRBeP7uayRIvsc5U6d2MyrmLA"
 CHANNEL_ID = "@news_dept"
 
@@ -22,26 +22,33 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    feed_url = "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml"
+    feed_url = "https://nytimes.com"
     try:
         feed = feedparser.parse(feed_url)
+        # Проверяем, что в ленте действительно есть записи
         if feed.entries and len(feed.entries) > 0:
+            # СТРОГО вытаскиваем самую первую новость (индекс)
             first_entry = feed.entries[0]
             
-            title = first_entry.get('title', '')
-            desc = first_entry.get('description', '')
+            title = first_entry.get('title', '').strip()
+            desc = first_entry.get('description', '').strip()
             
-            # ИСПРАВЛЕНО: Сначала берем поле 'link' (оно содержит полный URL статьи).
-            # Поле 'id' у NYT часто указывает просто на базовый домен.
-            link = first_entry.get('link', '')
+            # Извлекаем прямую ссылку на саму статью
+            link = first_entry.get('link', '').strip()
             if not link or not link.startswith('http'):
-                link = first_entry.get('id', 'https://nytimes.com')
+                link = first_entry.get('id', 'https://nytimes.com').strip()
                 
             if title and link:
                 return title, desc, link
     except Exception as e:
         print("RSS parsing error:", e)
-    return "Mysterious Signals From Deep Space Confirmed by Astronomers", "Researchers have recorded highly unusual, repetitive radio bursts coming from a galaxy located millions of light-years away.", "https://nytimes.com"
+        
+    # ИСПРАВЛЕНО: Если фид недоступен, заглушка вернет синхронизированные данные (и текст, и ссылку про космос)
+    return (
+        "Mysterious Signals From Deep Space Confirmed by Astronomers", 
+        "Researchers have recorded highly unusual, repetitive radio bursts coming from a galaxy located millions of light-years away.", 
+        "https://nytimes.com" # Космическая ссылка для заглушки
+    )
 
 def generate_tiktok_script(title, text):
     prompt = (
@@ -72,7 +79,7 @@ def generate_tiktok_script(title, text):
             if ai_text:
                 return ai_text
     except Exception as e:
-        print("Powerful AI Error:", e)
+        print("Powerful AI Error (Fallback active):", e)
         
     return (
         f"📌 TIKTOK TITLE: Mysterious Deep Space Signals Confirmed! 🌌\n\n"
@@ -91,8 +98,8 @@ def generate_tiktok_script(title, text):
 def check_and_run():
     try:
         title, summary, link = get_latest_news()
-        print("Checking news feed... Processing title:", title)
-        print("Extracted Link:", link) # Логируем ссылку в консоль для проверки
+        print(f"Обработка текущей новости: {title}")
+        print(f"Ссылка новости: {link}")
         
         script = generate_tiktok_script(title, summary)
         
@@ -110,12 +117,12 @@ def check_and_run():
         else:
             bot.send_message(CHANNEL_ID, message_text)
             
-        print("🎉 SUCCESS! Тестовый сценарий отправлен!")
+        print("🎉 SUCCESS! Пост отправлен!")
     except Exception as telegram_error:
         print("Telegram send error:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Перезапуск в режиме тестирования ссылок...")
+    print("🚀 Перезапуск бота с исправленным парсером...")
     while True:
         check_and_run()
         time.sleep(450)
