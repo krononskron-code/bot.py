@@ -28,12 +28,10 @@ def get_latest_news():
             first_entry = feed.entries[0]
             title = first_entry.get('title', 'Global Alert')
             desc = first_entry.get('description', 'New global health development.')
-            # Забираем прямую ссылку на статью
             link = first_entry.get('link', 'https://who.int')
             return title, desc, link
     except Exception as e:
         print("RSS parsing error:", e)
-    # Страховочный вариант с рабочей ссылкой
     return (
         "Massive Tech Discovery: New AI System Passes Human Intelligence Test", 
         "Scientists in Silicon Valley have reported a major breakthrough.",
@@ -41,9 +39,8 @@ def get_latest_news():
     )
 
 def generate_tiktok_script(title, text):
-    # Промпт перенастроен на жесткое разделение по блокам и визуальные подсказки
     prompt = (
-        f"Ты — профессиональный сценарист TikTok и эксперт по переводам под HeyGen. "
+        f"Ты — professionalный сценарист TikTok и эксперт по переводам под HeyGen. "
         f"Твоя задача — перевести англоязычную новость ниже и написать пошаговый сценарий СТРОГО на русском языке. "
         f"Этот текст будет загружен в HeyGen для LipSync, поэтому он должен строго соответствовать структуре:\n\n"
         f"Разбей ответ на ТРИ обязательные части:\n"
@@ -63,18 +60,15 @@ def generate_tiktok_script(title, text):
     except Exception as e:
         print("AI Error:", e)
     
-    # Идеально структурированный резервный ответ, если ИИ долго отвечает
     return (
         "🔥 **ХУК** 🔥\n"
-        "[ВИЗУАЛ: Скриншот шокирующего заголовка новостной статьи с крупным текстом]\n"
+        "[ВИЗУАЛ: Скриншот шокирующего заголовка новостной статьи]\n"
         "Вы не поверите, что только что произошло! Ученые официально подтвердили масштабное событие, которое потрясло весь мир.\n\n"
         "🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
-        "[ВИЗУАЛ: Фото футуристичного суперкомпьютера или светящегося кода нейросети]\n"
+        "[ВИЗУАЛ: Фото футуристичного суперкомпьютера]\n"
         "Новый искусственный интеллект полностью прошел тест на человеческий разум. Это масштабное технологическое открытие может полностью изменить все, что мы знаем о нашей повседневной жизни.\n\n"
-        "[ВИЗУАЛ: Кадры удивленных людей, смотрящих в экраны телефонов в новостях]\n"
-        "В социальных сетях уже начинается паника, и миллионы людей массово обсуждают эту новость. Ведущие специалисты Кремниевой долины сообщают, что мы официально перешли в новую эру.\n\n"
         "🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
-        "[ВИЗУАЛ: Плашка с надписью 'ПОДПИШИСЬ' и стрелка вниз на кнопку подписки]\n"
+        "[ВИЗУАЛ: Плашка с надписью 'ПОДПИШИСЬ']\n"
         "Это событие точно изменит наше будущее навсегда. Подписывайтесь на канал, чтобы первыми узнавать о главных мировых сенсациях!"
     )
 
@@ -88,15 +82,22 @@ def check_and_run():
             LAST_TITLE = title
             script = generate_tiktok_script(title, summary)
             
-            # Собираем красивое сообщение с кнопкой/ссылкой на первоисточник внизу
             message_text = (
                 f"🎬 **ГОТОВЫЙ СЦЕНАРИЙ ДЛЯ TIKTOK (ПОД HEYGEN)** 🎬\n\n"
                 f"{script}\n\n"
                 f"🔗 **Первоисточник новости:** {link}"
             )
             
-            bot.send_message(CHANNEL_ID, message_text)
-            print("🎉 SUCCESS! Structured script with visuals and link sent!")
+            # Умное деление текста: если он длиннее 4000 символов, бьем на части
+            if len(message_text) > 4000:
+                chunks = [message_text[i:i+4000] for i in range(0, len(message_text), 4000)]
+                for chunk in chunks:
+                    bot.send_message(CHANNEL_ID, chunk)
+                    time.sleep(1) # Короткая пауза для Telegram
+            else:
+                bot.send_message(CHANNEL_ID, message_text)
+                
+            print("🎉 SUCCESS! Split script with visuals and link sent!")
         else:
             print("No new unique stories found.")
             
