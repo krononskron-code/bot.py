@@ -1,6 +1,5 @@
 import time
-import requests
-from bs4 import BeautifulSoup
+import feedparser
 import telebot
 import google.generativeai as genai
 import http.server
@@ -15,25 +14,24 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-# Мини веб-сервер для обхода блокировки портов Render
+# Веб-сервер для обхода портов Render
 def run_web_server():
     server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
     server.serve_forever()
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    url = "https://reutersagency.com"
+    # Используем стабильный мировой фид новостей от мировых агентств
+    feed_url = "https://nytimes.com"
     try:
-        response = requests.get(url, timeout=15)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'xml')
-            first_item = soup.find('item')
-            if first_item:
-                title = first_item.find('title').text
-                desc = first_item.find('description').text if first_item.find('description') else "Breaking US news."
-                return title, desc
+        feed = feedparser.parse(feed_url)
+        if feed.entries:
+            first_entry = feed.entries[0]
+            title = first_entry.title
+            desc = first_entry.description if 'description' in first_entry else "Breaking global news."
+            return title, desc
     except Exception as e:
-        print("Scraping error:", e)
+        print("RSS parsing error:", e)
     return None, None
 
 def generate_tiktok_script(title, text):
@@ -52,7 +50,7 @@ def generate_tiktok_script(title, text):
 
 def check_and_run():
     title, summary = get_latest_news()
-    print(f"Checking Reuters Feed... Current Title: {title}")
+    print(f"Checking news feed... Current Title: {title}")
     if title:
         script = generate_tiktok_script(title, summary)
         message_text = f"🚨 **NEW TIKTOK SCRIPT** 🚨\n\n{script}"
