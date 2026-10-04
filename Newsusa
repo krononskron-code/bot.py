@@ -64,3 +64,10 @@ if __name__ == "__main__":
         except Exception as main_error:
             print("Main loop error:", main_error)
         time.sleep(300)  # Проверка каждые 5 минут
+# Этот хвостик нужен только для бесплатного тарифа Render Web Service
+import http.server
+import threading
+def run_web_server():
+    server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
+    server.serve_forever()
+threading.Thread(target=run_web_server, daemon=True).start()
