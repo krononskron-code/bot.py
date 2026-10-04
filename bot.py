@@ -5,7 +5,6 @@ import google.generativeai as genai
 import http.server
 import threading
 
-# Настройки
 TELEGRAM_TOKEN = "8667861727:AAFu9e__XCjpr7p5I3wIvCD1W0liGuzo1HQR"
 CHANNEL_ID = "@news_dept"
 GEMINI_API_KEY = "AQ.Ab8RN6Jmvd9LamV4Dy2oBfZPH08eDR8dT06HCGHT4gl3pfByMw"
@@ -14,25 +13,19 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-# Веб-сервер для обхода портов Render
 def run_web_server():
     server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
     server.serve_forever()
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    # Используем стабильный мировой фид новостей от мировых агентств
     feed_url = "https://nytimes.com"
-    try:
-        feed = feedparser.parse(feed_url)
-        if feed.entries:
-            first_entry = feed.entries[0]
-            first_entry = feed.entries[0]
-title = first_entry.get('title', 'Breaking News')
-
-            return title, desc
-    except Exception as e:
-        print("RSS parsing error:", e)
+    feed = feedparser.parse(feed_url)
+    if feed.entries:
+        first_entry = feed.entries[0]
+        title = first_entry.get('title', 'Breaking News')
+        desc = first_entry.get('description', 'Breaking global news.')
+        return title, desc
     return None, None
 
 def generate_tiktok_script(title, text):
@@ -51,7 +44,7 @@ def generate_tiktok_script(title, text):
 
 def check_and_run():
     title, summary = get_latest_news()
-    print(f"Checking news feed... Current Title: {title}")
+    print("Checking news feed... Found title:", title)
     if title:
         script = generate_tiktok_script(title, summary)
         message_text = f"🚨 **NEW TIKTOK SCRIPT** 🚨\n\n{script}"
