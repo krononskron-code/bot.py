@@ -21,41 +21,43 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    feed_url = "https://nytimes.com"
+    feed_url = "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml"
     try:
         feed = feedparser.parse(feed_url)
         if feed.entries and len(feed.entries) > 0:
-            first_entry = feed.entries
+            first_entry = feed.entries[0]
             title = first_entry.get('title', '')
             desc = first_entry.get('description', '')
-            link = first_entry.get('link', '')
-            if not link and 'links' in first_entry and len(first_entry.links) > 0:
-                link = first_entry.links.get('href', '')
+            
+            # Извлекаем СТРОГО уникальный ID статьи (в NYT это и есть прямая ссылка на новость)
+            link = first_entry.get('id', '')
+            if not link or not link.startswith('http'):
+                link = first_entry.get('link', 'https://nytimes.com')
                 
             if title and link:
                 return title, desc, link
     except Exception as e:
         print("RSS parsing error:", e)
-    return "New deep space signals detected by telescopes", "Astronomers have recorded highly unusual, repetitive radio bursts coming from a galaxy located millions of light-years away.", "https://nytimes.com"
+    return "Mysterious Signals From Deep Space Confirmed by Astronomers", "Researchers have recorded highly unusual, repetitive radio bursts coming from a galaxy located millions of light-years away.", "https://nytimes.com"
 
 def generate_tiktok_script(title, text):
+    # Промпт изменен: жесткое требование сделать текст КОРОТКИМ и емким
     prompt = (
         f"Ты — профессиональный сценарист TikTok и эксперт по вирусным текстам для HeyGen.\n"
-        f"Твоя задача — взять англоязычную новость ниже, перевести её и написать подробный пошаговый сценарий СТРОГО на русском языке.\n"
-        f"СТРОГОЕ ТРЕБОВАНИЕ: Полностью исключи общие фразы и воду! В блоке 'ОСНОВНОЙ ТЕКСТ' ты обязан детально расписать саму суть новости, используя конкретные факты, названия, термины и цифры. Зритель должен четко понять, что произошло.\n\n"
-        f"Разбей ответ на 5 частей:\n"
-        f"1. 📌 TIKTOK TITLE (Вирусное название видео на английском языке)\n"
-        f"2. 🔥 ХУК (Шокирующее начало на 5-7 секунд на русском языке)\n"
-        f"3. 🎙️ ОСНОВНОЙ ТЕКСТ (Глубокое раскрытие сути конкретной новости на русском, разделенное на короткие абзацы. Пиши конкретно про тему статьи, раскрывая её детали!)\n"
-        f"4. 🎬 ЗАКЛЮЧЕНИЕ (Призыв к действию на русском языке)\n"
+        f"Твоя задача — взять англоязычную новость ниже, перевести её и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
+        f"КРИТИЧЕСКОЕ ТРЕБОВАНИЕ: Текст должен быть очень коротким, емким и динамичным (максимум 70-90 слов на весь сценарий)! Уложи всю суть новости в 3-4 коротких, сильных предложения. Избегай длинных фраз. Зритель должен за 40 секунд понять, что случилось.\n\n"
+        f"Разбей ответ ровно на 5 частей:\n"
+        f"1. 📌 TIKTOK TITLE (Вирусное название видео СТРОГО НА АНГЛИЙСКОМ языке)\n"
+        f"2. 🔥 ХУК (Шокирующее начало на 1 короткое предложение на русском языке)\n"
+        f"3. 🎙️ ОСНОВНОЙ ТЕКСТ (Суть конкретной новости на русском языке. Буквально 2 простых предложения строго по фактам из заголовка!)\n"
+        f"4. 🎬 ЗАКЛЮЧЕНИЕ (Призыв к действию на 1 короткое предложение на русском языке)\n"
         f"5. #️⃣ HASHTAGS (5-7 английских хэштегов по теме новости, добавь #breakingnews, #trending, #fyp)\n\n"
         f"ПРАВИЛА ОФОРМЛЕНИЯ:\n"
-        f"- Перед каждым блоком добавь строчку '[ВИЗУАЛ: ...]' с описанием картинки на русском.\n"
-        f"- Сам текст для чтения пиши СТРОГО буквами на русском языке. Никакого Algospeak и английских слов в блоках озвучки.\n\n"
+        f"- Перед каждым блоком (Хук, Текст, Заключение) добавь строчку '[ВИЗУАЛ: ...]' с описанием картинки на русском.\n"
+        f"- Текст пиши СТРОГО обычными русскими буквами. Никакого Algospeak и английских слов в блоках чтения.\n\n"
         f"Новость: {title}.\nДетали: {text}"
     )
     
-    # Переключаемся на мощную модель Qwen/Gemini через стабильный хаб HuggingFace, работающий без сбоев
     api_url = "https://pollinations.ai"
     payload = {
         "model": "qwen",
@@ -71,16 +73,16 @@ def generate_tiktok_script(title, text):
         print("Powerful AI Error:", e)
         
     return (
-        f"📌 TIKTOK TITLE: Mysterious Signals From Deep Space Confirmed! 🌌\n\n"
+        f"📌 TIKTOK TITLE: Mysterious Deep Space Signals Confirmed! 🌌\n\n"
         f"🔥 **ХУК** 🔥\n"
-        f"[ВИЗУАЛ: Скриншот научной статьи Нью-Йорк Таймс про космос]\n"
-        f"Вы не поверите, что только что обнаружили астрономы! Из глубин космоса зафиксирован повторяющийся радиосигнал.\n\n"
+        f"[ВИЗУАЛ: Скриншот научной статьи Нью-Йорк Таймс]\n"
+        f"Вы не поверите, что только что обнаружили астрономы!\n\n"
         f"🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
-        f"[ВИЗУАЛ: Фото гигантского радиотелескопа или сияющей далекой галактики]\n"
-        f"Исследователи официально подтвердили, что зафиксировали серию необычных быстрых радиовсплесков. Сигнал исходит из карликовой галактики, которая находится на расстоянии миллионов световых лет от Земли. Самое загадочное — это математическая точность импульсов. Они повторяются с циклом в несколько дней, что полностью исключает большинство известных природных явлений вроде взрывов обычных звезд.\n\n"
+        f"[ВИЗУАЛ: Фото гигантского радиотелескопа]\n"
+        f"Ученые зафиксировали серию загадочных радиосигналов из далекой галактики. Импульсы повторяются с математической точностью, что полностью исключает взрывы обычных звезд.\n\n"
         f"🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
         f"[ВИЗУАЛ: Плашка с надписью 'ПОДПИШИСЬ']\n"
-        f"Ученые продолжают сканировать этот сектор вселенной. Подписывайтесь на канал, чтобы первыми узнать, если они расшифруют это послание!\n\n"
+        f"Подписывайтесь на канал, чтобы первыми узнать разгадку этой космической тайны!\n\n"
         f"#️⃣ HASHTAGS: #space #nasa #astronomy #breakingnews #trending #fyp"
     )
 
@@ -108,7 +110,7 @@ def check_and_run():
             else:
                 bot.send_message(CHANNEL_ID, message_text)
                 
-            print("🎉 SUCCESS! Full advanced script sent!")
+            print("🎉 SUCCESS! Short advanced script with direct link sent!")
     except Exception as telegram_error:
         print("Telegram send error:", telegram_error)
 
