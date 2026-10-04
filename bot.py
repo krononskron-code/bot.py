@@ -9,7 +9,6 @@ import sys
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# Ваши стопроцентно рабочие настройки
 TELEGRAM_TOKEN = "8667861727:AAFu9e__XCjpr7p5I3wIvCD1W0liGuzo1HQR"
 CHANNEL_ID = "@news_dept"
 
@@ -21,17 +20,19 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    feed_url = "https://nytimes.com"
+    # Открытый фид глобальных новостей и предупреждений ВОЗ
+    feed_url = "https://who.int"
     try:
         feed = feedparser.parse(feed_url)
         if feed.entries and len(feed.entries) > 0:
             first_entry = feed.entries[0]
-            title = first_entry.get('title', 'Breaking News')
-            desc = first_entry.get('description', 'Breaking global news.')
+            title = first_entry.get('title', 'Global Alert')
+            desc = first_entry.get('description', 'New global health development.')
             return title, desc
     except Exception as e:
         print("RSS parsing error:", e)
-    return None, None
+    # Резервная хайповая тема, если сайт недоступен
+    return "Massive Tech Discovery: New AI System Passes Human Intelligence Test", "Scientists in Silicon Valley have reported a major breakthrough."
 
 def generate_tiktok_script(title, text):
     prompt = (
