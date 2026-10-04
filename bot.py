@@ -3,7 +3,10 @@ import requests
 from bs4 import BeautifulSoup
 import telebot
 import google.generativeai as genai
+import http.server
+import threading
 
+# Настройки
 TELEGRAM_TOKEN = "8667861727:AAFu9e__XCjpr7p5I3wIvCD1W0liGuzo1HQR"
 CHANNEL_ID = "@news_dept"
 GEMINI_API_KEY = "AQ.Ab8RN6Jmvd9LamV4Dy2oBfZPH08eDR8dT06HCGHT4gl3pfByMw"
@@ -11,7 +14,12 @@ GEMINI_API_KEY = "AQ.Ab8RN6Jmvd9LamV4Dy2oBfZPH08eDR8dT06HCGHT4gl3pfByMw"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
-LAST_TITLE = ""
+
+# Мини веб-сервер для обхода блокировки портов Render
+def run_web_server():
+    server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
+    server.serve_forever()
+threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
     url = "https://reutersagency.com"
@@ -43,18 +51,13 @@ def generate_tiktok_script(title, text):
         return f"New Event: {title}"
 
 def check_and_run():
-    global LAST_TITLE
     title, summary = get_latest_news()
     print(f"Checking Reuters Feed... Current Title: {title}")
-    
-    if title and title != LAST_TITLE:
-        LAST_TITLE = title
+    if title:
         script = generate_tiktok_script(title, summary)
         message_text = f"🚨 **NEW TIKTOK SCRIPT** 🚨\n\n{script}"
         bot.send_message(CHANNEL_ID, message_text, parse_mode="Markdown")
         print("Script sent to Telegram successfully!")
-    else:
-        print("No new unique stories found right now.")
 
 if __name__ == "__main__":
     print("Bot starting script loop...")
@@ -63,11 +66,4 @@ if __name__ == "__main__":
             check_and_run()
         except Exception as main_error:
             print("Main loop error:", main_error)
-        time.sleep(300)  # Проверка каждые 5 минут
-# Этот хвостик нужен только для бесплатного тарифа Render Web Service
-import http.server
-import threading
-def run_web_server():
-    server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
-    server.serve_forever()
-threading.Thread(target=run_web_server, daemon=True).start()
+        time.sleep(450)
