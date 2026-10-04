@@ -1,11 +1,11 @@
 import os
 import time
-import feedparser
 import telebot
 import requests
 import http.server
 import threading
 import sys
+import xml.etree.ElementTree as ET
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -22,42 +22,44 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    feed_url = "https://nytimes.com"
-    
-    # Маскируемся под обычный браузер, чтобы NYT не блокировал запросы бота
+    feed_url = "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
     
     try:
-        # Скачиваем RSS через requests с добавлением заголовков браузера
         response = requests.get(feed_url, headers=headers, timeout=15)
-        
         if response.status_code == 200:
-            # Парсим скачанный XML контент
-            feed = feedparser.parse(response.text)
+            # Используем ElementTree вместо багнутого feedparser
+            root = ET.fromstring(response.content)
             
-            if feed.entries and len(feed.entries) > 0:
-                # Берем самую первую, свежую новость
-                first_entry = feed.entries[0]
+            # Находим все элементы новостей (<item>) в RSS
+            items = root.findall('.//item')
+            if items and len(items) > 0:
+                first_entry = items[0]
                 
-                title = first_entry.get('title', '').strip()
-                desc = first_entry.get('description', '').strip()
-                link = first_entry.get('link', '').strip()
+                # Извлекаем данные напрямую из тегов XML
+                title_node = first_entry.find('title')
+                desc_node = first_entry.find('description')
+                link_node = first_entry.find('link')
                 
-                # Если ссылка пустая, пробуем вытащить guid / id
-                if not link or not link.startswith('http'):
-                    link = first_entry.get('id', 'https://nytimes.com').strip()
-                    
+                title = title_node.text.strip() if title_node is not None else ''
+                desc = desc_node.text.strip() if desc_node is not None else ''
+                link = link_node.text.strip() if link_node is not None else ''
+                
+                # Если тег <link> пустой, проверяем альтернативный тег глобального ID (guid)
+                if not link:
+                    guid_node = first_entry.find('guid')
+                    if guid_node is not None:
+                        link = guid_node.text.strip()
+                        
                 if title and link:
                     return title, desc, link
-        else:
-            print(f"NYT заблокировал запрос. Статус код: {response.status_code}")
-            
+                    
     except Exception as e:
-        print("Ошибка при чтении RSS ленты:", e)
+        print("Ошибка парсинга XML:", e)
         
-    # Синхронизированная заглушка, если сайт лежит или полностью забанил скрипт
+    # Корректная космическая заглушка, если сайт упадет
     return (
         "Mysterious Signals From Deep Space Confirmed by Astronomers", 
         "Researchers have recorded highly unusual, repetitive radio bursts coming from a galaxy located millions of light-years away.", 
@@ -112,8 +114,8 @@ def generate_tiktok_script(title, text):
 def check_and_run():
     try:
         title, summary, link = get_latest_news()
-        print(f"Парсинг успешен. Новость: {title}")
-        print(f"Отправляем ссылку: {link}")
+        print(f"Успешно спарсили XML. Новость: {title}")
+        print(f"Прямая ссылка: {link}")
         
         script = generate_tiktok_script(title, summary)
         
@@ -131,12 +133,12 @@ def check_and_run():
         else:
             bot.send_message(CHANNEL_ID, message_text)
             
-        print("🎉 SUCCESS! Пост отправлен!")
+        print("🎉 SUCCESS! Сценарий отправлен!")
     except Exception as telegram_error:
         print("Telegram send error:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Бот запущен с обходом блокировок NYT...")
+    print("🚀 Бот запущен на чистом XML-парсере...")
     while True:
         check_and_run()
         time.sleep(450)
