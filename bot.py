@@ -6,26 +6,38 @@ import http.server
 import threading
 import sys
 import xml.etree.ElementTree as ET
+import urllib.parse
 
-# Настройка буферизации для логов в реальном времени
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 # 🔐 Настройки Telegram
 TELEGRAM_TOKEN = "8667861727:AAE1N_d5mQCRBeP7uayRIvsc5U6d2MyrmLA"
 CHANNEL_ID = "@news_dept"
+DB_FILE = "last_news.txt" 
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def run_web_server():
-    """Веб-сервер для предотвращения засыпания процесса на хостингах"""
     server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
     server.serve_forever()
 threading.Thread(target=run_web_server, daemon=True).start()
 
+def google_translate(text, target_lang="ru"):
+    """Локальный переводчик текста на случай сбоя ИИ нейросети"""
+    try:
+        url = f"https://googleapis.com{target_lang}&dt=t&q={urllib.parse.quote(text)}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            translated_chunks = [chunk[0] for chunk in result[0] if chunk[0]]
+            return "".join(translated_chunks).strip()
+    except Exception as e:
+        print("Ошибка локального переводчика Google:", e)
+    return text
+
 def get_latest_news():
-    """Получение свежей новости из RSS-ленты NYT с обработкой пространств имен"""
-    feed_url = "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml"
+    feed_url = "https://nytimes.com"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
@@ -33,24 +45,18 @@ def get_latest_news():
     try:
         response = requests.get(feed_url, headers=headers, timeout=15)
         if response.status_code == 200:
-            # Парсим XML-контент
             root = ET.fromstring(response.content)
-            
-            # Словарь пространств имен, используемых в XML у New York Times
             namespaces = {
                 'atom': 'http://w3.org',
                 'dc': 'http://purl.org'
             }
             
-            # Находим все элементы <item>
             items = root.findall('.//item')
             if items and len(items) > 0:
                 first_entry = items[0]
                 
                 title_node = first_entry.find('title')
                 desc_node = first_entry.find('description')
-                
-                # Важно: NYT часто хранит прямую ссылку в теге <atom:link> вместо <link>
                 atom_link_node = first_entry.find('atom:link', namespaces)
                 
                 title = title_node.text.strip() if title_node is not None else ''
@@ -60,7 +66,6 @@ def get_latest_news():
                 if atom_link_node is not None:
                     link = atom_link_node.get('href', '').strip()
                 
-                # Если atom:link пустой, задействуем альтернативные теги
                 if not link:
                     link_node = first_entry.find('link')
                     if link_node is not None and link_node.text:
@@ -74,17 +79,11 @@ def get_latest_news():
                     return title, desc, link
                     
     except Exception as e:
-        print("Критическая ошибка разбора XML:", e)
+        print("Ошибка разбора XML:", e)
         
-    # Динамическая безопасная заглушка (если сайт полностью недоступен)
-    return (
-        "Nobel Prizes 2026: The Announcements Begin", 
-        "The annual announcements for the Nobel Prizes are underway, starting with groundbreaking discoveries in the scientific community.", 
-        "https://nytimes.com"
-    )
+    return None, None, None
 
 def generate_tiktok_script(title, text):
-    """Генерация сценария через исправленный POST-запрос к Pollinations AI"""
     prompt = (
         f"Ты — профессиональный сценарист TikTok и эксперт по вирусным текстам для HeyGen.\n"
         f"Твоя задача — взять англоязычную новость ниже, перевести её и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
@@ -102,52 +101,57 @@ def generate_tiktok_script(title, text):
     )
     
     api_url = "https://pollinations.ai"
-    
-    # Исправлено: Добавлены заголовки контента, без которых ИИ-сервер возвращает ошибку 400
-    headers = {
-        'Content-Type': 'application/json'
-    }
+    headers = {'Content-Type': 'application/json'}
     payload = {
         "model": "openai",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.3
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.4
     }
     
     try:
-        response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+        response = requests.post(api_url, headers=headers, json=payload, timeout=25)
         if response.status_code == 200:
             result = response.json()
             ai_text = result['choices']['message']['content']
             if ai_text and len(ai_text.strip()) > 30:
                 return ai_text.strip()
-        else:
-            print(f"ИИ-сервер вернул статус ошибку: {response.status_code}, контент: {response.text}")
     except Exception as e:
-        print("Сбой генерации текста через ИИ-шлюз:", e)
+        print("Нейросеть недоступна, запускаем встроенный переводчик:", e)
         
-    # Кастомная динамическая заглушка, собирающая сценарий под текущую новость, если ИИ недоступен
+    # ИСПРАВЛЕНО: Если ИИ ломается, Python сам переводит заголовок и описание на РУССКИЙ ЯЗЫК
+    ru_title = google_translate(title)
+    ru_text = google_translate(text)
+    
     return (
-        f"📌 TIKTOK TITLE: Major Discovery - {title}! 🔬\n\n"
+        f"📌 TIKTOK TITLE: Fresh Scientific Discovery! 🔬\n\n"
         f"🔥 **ХУК** 🔥\n"
         f"[ВИЗУАЛ: Скриншот авторитетного научного издания]\n"
-        f"Вы точно не ожидали услышать эти новости из мира науки сегодня!\n\n"
+        f"Вы точно не ожидали услышать эти важные новости науки сегодня!\n\n"
         f"🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
-        f"[ВИЗУАЛ: Тематическая иллюстрация по теме новости]\n"
-        f"Авторитетные источники сообщают: {title}. В деталях исследования указано следующее: {text}.\n\n"
+        f"[ВИЗУАЛ: Тематическая иллюстрация по теме открытия]\n"
+        f"Официально сообщается: {ru_title}. В деталях исследования указано следующее: {ru_text}.\n\n"
         f"🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
         f"[ВИЗУАЛ: Интерактивная плашка 'ПОДПИШИСЬ']\n"
-        f"Подписывайтесь на канал, чтобы оперативно следить за развитием этой темы!\n\n"
+        f"Подписывайтесь на наш канал, чтобы первыми узнавать о главных мировых событиях!\n\n"
         f"#️⃣ HASHTAGS: #science #news #breaking #trending #fyp"
     )
 
 def check_and_run():
     try:
         title, summary, link = get_latest_news()
-        print(f"Успешно извлечена новость: {title}")
-        print(f"Сформированная ссылка: {link}")
-        
+        if not title or not link:
+            return
+
+        last_published = ""
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                last_published = f.read().strip()
+
+        if link == last_published:
+            print("Новых статей пока нет. Засыпаем...")
+            return
+
+        print(f"Публикуем новую статью: {title}")
         script = generate_tiktok_script(title, summary)
         
         message_text = (
@@ -164,12 +168,15 @@ def check_and_run():
         else:
             bot.send_message(CHANNEL_ID, message_text)
             
-        print("🎉 SUCCESS! Публикация в канал успешно завершена!")
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            f.write(link)
+            
+        print("🎉 Успешно отправлено!")
     except Exception as telegram_error:
-        print("Ошибка отправки в Telegram канал:", telegram_error)
+        print("Telegram error:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Бот успешно перезапущен на монолитном XML/JSON-парсере...")
+    print("🚀 Бот запущен в боевом режиме с автопереводчиком и защитой от дублей...")
     while True:
         check_and_run()
-        time.sleep(450)
+        time.sleep(900) # Проверка каждые 15 минут
