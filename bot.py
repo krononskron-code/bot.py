@@ -22,14 +22,12 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    # Список из 3 стабильных и открытых мировых источников (ООН, НАСА, ВОЗ)
     feeds = [
         "https://un.org",
         "https://nasa.gov",
         "https://who.int"
     ]
     
-    # Перемешиваем источники, чтобы бот проверял разные сферы
     random.shuffle(feeds)
     
     for feed_url in feeds:
@@ -39,13 +37,25 @@ def get_latest_news():
                 first_entry = feed.entries[0]
                 title = first_entry.get('title', 'Global Alert')
                 desc = first_entry.get('description', 'New global development.')
-                link = first_entry.get('link', 'https://google.com')
+                
+                # Умный поиск точной ссылки на конкретную новость
+                link = None
+                if 'link' in first_entry and first_entry.link:
+                    link = first_entry.link
+                elif 'id' in first_entry and first_entry.id and (first_entry.id.startswith('http://') or first_entry.id.startswith('https://')):
+                    link = first_entry.id
+                elif 'links' in first_entry and len(first_entry.links) > 0:
+                    link = first_entry.links[0].get('href')
+                
+                # Если ничего не нашлось, даем ссылку на фид
+                if not link:
+                    link = feed_url
+                    
                 return title, desc, link
         except Exception as e:
             print(f"Error reading feed {feed_url}: {e}")
             continue
             
-    # Заглушка на самый крайний случай
     return (
         "Massive Space Discovery: NASA Detects Mysterious Signal From Deep Galaxy", 
         "Astronomers using deep space telescopes have reported a highly unusual and repetitive signal coming from a distant star system.",
@@ -110,7 +120,7 @@ def check_and_run():
             else:
                 bot.send_message(CHANNEL_ID, message_text)
                 
-            print("🎉 SUCCESS! Mixed script sent successfully!")
+            print("🎉 SUCCESS! Mixed script with precise link sent!")
         else:
             print("No new unique stories found.")
             
