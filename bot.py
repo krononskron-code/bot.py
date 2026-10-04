@@ -1,17 +1,14 @@
 import time
 import feedparser
 import telebot
-import google.generativeai as genai
+import requests
 import http.server
 import threading
 
 TELEGRAM_TOKEN = "8667861727:AAFu9e__XCjpr7p5I3wIvCD1W0liGuzo1HQR"
 CHANNEL_ID = "@news_dept"
-GEMINI_API_KEY = "AQ.Ab8RN6Jmvd9LamV4Dy2oBfZPH08eDR8dT06HCGHT4gl3pfByMw"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
 
 def run_web_server():
     server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
@@ -36,11 +33,14 @@ def generate_tiktok_script(title, text):
         f"Structure the final output into: 1. Voiceover 2. On-screen text 3. Visuals. "
         f"Maintain an objective, neutral reporter tone. News Title: {title}. Details: {text}"
     )
+    api_url = "https://pollinations.ai"
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        response = requests.post(api_url, json={"messages": [{"role": "user", "content": prompt}]}, timeout=20)
+        if response.status_code == 200:
+            return response.text
     except Exception as e:
-        return f"New Event: {title}"
+        print("AI Error:", e)
+    return f"New Event: {title}"
 
 def check_and_run():
     title, summary = get_latest_news()
