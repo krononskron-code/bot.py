@@ -7,37 +7,34 @@ import http.server
 import threading
 import sys
 
-# Настройка буферизации для Docker / систем логирования
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# 🔐 Не забудьте перевыпустить токен в @BotFather, если этот скомпрометирован
+# 🔐 Токен для тестов
 TELEGRAM_TOKEN = "8667861727:AAE1N_d5mQCRBeP7uayRIvsc5U6d2MyrmLA"
 CHANNEL_ID = "@news_dept"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def run_web_server():
-    """Веб-сервер для удержания процесса в деплой-платформах типа Render"""
     server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
     server.serve_forever()
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    """Получение свежей новости из RSS-ленты NYT"""
-    feed_url = "https://nytimes.com"
+    feed_url = "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml"
     try:
         feed = feedparser.parse(feed_url)
-        # ИСПРАВЛЕНО: Берем строго первый элемент списка, чтобы не путать данные
         if feed.entries and len(feed.entries) > 0:
             first_entry = feed.entries[0]
             
             title = first_entry.get('title', '')
             desc = first_entry.get('description', '')
             
-            # Извлекаем ссылку строго из этой же первой записи
+            # ИСПРАВЛЕНО: Сначала берем поле 'link' (оно содержит полный URL статьи).
+            # Поле 'id' у NYT часто указывает просто на базовый домен.
             link = first_entry.get('link', '')
-            if not link:
+            if not link or not link.startswith('http'):
                 link = first_entry.get('id', 'https://nytimes.com')
                 
             if title and link:
@@ -47,7 +44,6 @@ def get_latest_news():
     return "Mysterious Signals From Deep Space Confirmed by Astronomers", "Researchers have recorded highly unusual, repetitive radio bursts coming from a galaxy located millions of light-years away.", "https://nytimes.com"
 
 def generate_tiktok_script(title, text):
-    """Генерация сценария через исправленный текстовый эндпоинт Pollinations AI"""
     prompt = (
         f"Ты — профессиональный сценарист TikTok и эксперт по вирусным текстам для HeyGen.\n"
         f"Твоя задача — взять англоязычную новость ниже, перевести её и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
@@ -64,7 +60,6 @@ def generate_tiktok_script(title, text):
         f"Новость: {title}.\nДетали: {text}"
     )
     
-    # ИСПРАВЛЕНО: Правильный API URL для текстовых запросов к Pollinations
     api_url = "https://pollinations.ai"
     payload = {
         "model": "openai",
@@ -73,11 +68,11 @@ def generate_tiktok_script(title, text):
     try:
         response = requests.post(api_url, json=payload, timeout=30)
         if response.status_code == 200:
-            ai_text = response.json()['choices'][0]['message']['content']
+            ai_text = response.json()['choices']['message']['content']
             if ai_text:
                 return ai_text
     except Exception as e:
-        print("Powerful AI Error (Fallback active):", e)
+        print("Powerful AI Error:", e)
         
     return (
         f"📌 TIKTOK TITLE: Mysterious Deep Space Signals Confirmed! 🌌\n\n"
@@ -97,8 +92,8 @@ def check_and_run():
     try:
         title, summary, link = get_latest_news()
         print("Checking news feed... Processing title:", title)
+        print("Extracted Link:", link) # Логируем ссылку в консоль для проверки
         
-        # Проверка дубликатов отключена умышленно для постоянного тестирования
         script = generate_tiktok_script(title, summary)
         
         message_text = (
@@ -115,12 +110,12 @@ def check_and_run():
         else:
             bot.send_message(CHANNEL_ID, message_text)
             
-        print("🎉 SUCCESS! Сценарий отправлен!")
+        print("🎉 SUCCESS! Тестовый сценарий отправлен!")
     except Exception as telegram_error:
         print("Telegram send error:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Бот запущен в тестовом режиме принудительного спама...")
+    print("🚀 Перезапуск в режиме тестирования ссылок...")
     while True:
         check_and_run()
         time.sleep(450)
