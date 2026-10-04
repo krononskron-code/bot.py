@@ -40,8 +40,8 @@ def get_latest_news():
 
 def generate_tiktok_script(title, text):
     prompt = (
-        f"Ты — professionalный сценарист TikTok и эксперт по переводам под HeyGen. "
-        f"Твоя задача — перевести англоязычную новость ниже и написать пошаговый сценарий СТРОГО на русском языке. "
+        f"Ты — профессиональный сценарист TikTok и эксперт по вирусным текстам для HeyGen.\n"
+        f"Твоя задача — перевести англоязычную новость ниже и написать подробный пошаговый сценарий СТРОГО на русском языке.\n"
         f"Этот текст будет загружен в HeyGen для LipSync, поэтому он должен строго соответствовать структуре:\n\n"
         f"Разбей ответ на ТРИ обязательные части:\n"
         f"1. 🔥 ХУК (Шокирующее начало на 5-7 секунд для удержания внимания)\n"
@@ -54,7 +54,8 @@ def generate_tiktok_script(title, text):
     )
     api_url = "https://pollinations.ai"
     try:
-        response = requests.get(api_url, params={"prompt": prompt}, timeout=25)
+        # Используем правильный POST-запрос с JSON, чтобы ИИ не присылал HTML-код сайта
+        response = requests.post(api_url, json={"messages": [{"role": "user", "content": prompt}]}, timeout=25)
         if response.status_code == 200:
             return response.text
     except Exception as e:
@@ -88,16 +89,15 @@ def check_and_run():
                 f"🔗 **Первоисточник новости:** {link}"
             )
             
-            # Умное деление текста: если он длиннее 4000 символов, бьем на части
             if len(message_text) > 4000:
                 chunks = [message_text[i:i+4000] for i in range(0, len(message_text), 4000)]
                 for chunk in chunks:
                     bot.send_message(CHANNEL_ID, chunk)
-                    time.sleep(1) # Короткая пауза для Telegram
+                    time.sleep(1)
             else:
                 bot.send_message(CHANNEL_ID, message_text)
                 
-            print("🎉 SUCCESS! Split script with visuals and link sent!")
+            print("🎉 SUCCESS! Fixed script sent!")
         else:
             print("No new unique stories found.")
             
