@@ -1,15 +1,16 @@
 import time
+import feedparser
 import telebot
 import requests
 import http.server
 import threading
 import sys
 
-# Принудительно заставляем логи печататься в Render в ту же секунду
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-TELEGRAM_TOKEN = "8667861727:AAE1N_d5mQCRBeP7uayRIvsc5U6d2MyrmLA"
+# Ваши стопроцентно рабочие настройки
+TELEGRAM_TOKEN = "8667861727:AAFu9e__XCjpr7p5I3wIvCD1W0liGuzo1HQR"
 CHANNEL_ID = "@news_dept"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -18,6 +19,19 @@ def run_web_server():
     server = http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler)
     server.serve_forever()
 threading.Thread(target=run_web_server, daemon=True).start()
+
+def get_latest_news():
+    feed_url = "https://nytimes.com"
+    try:
+        feed = feedparser.parse(feed_url)
+        if feed.entries and len(feed.entries) > 0:
+            first_entry = feed.entries[0]
+            title = first_entry.get('title', 'Breaking News')
+            desc = first_entry.get('description', 'Breaking global news.')
+            return title, desc
+    except Exception as e:
+        print("RSS parsing error:", e)
+    return None, None
 
 def generate_tiktok_script(title, text):
     prompt = (
@@ -38,25 +52,18 @@ def generate_tiktok_script(title, text):
 
 def check_and_run():
     try:
-        # ВРЕМЕННАЯ ЗАГЛУШКА: Проверяем чистую отправку без капризных сайтов
-        title = "🔴 BREAKING: Massive Political Scandal Sparks Storm in Washington"
-        summary = "Federal investigators have launched an overnight inquiry into a major development involving senior US officials."
-        
-        print(f"--- STARTING CHECK ---")
-        print(f"Testing AI generation for title: {title}")
-        
-        script = generate_tiktok_script(title, summary)
-        message_text = f"🚨 NEW TIKTOK SCRIPT 🚨\n\n{script}"
-        
-        print("Attempting to send message to Telegram...")
-        bot.send_message(CHANNEL_ID, message_text)
-        print("🎉 SUCCESS! Script sent to Telegram successfully!")
-        
-    except Exception as e:
-        print("🛑 CRITICAL ERROR:", e)
+        title, summary = get_latest_news()
+        print("Checking news feed... Found title:", title)
+        if title:
+            script = generate_tiktok_script(title, summary)
+            message_text = f"🚨 **NEW TIKTOK SCRIPT** 🚨\n\n{script}"
+            bot.send_message(CHANNEL_ID, message_text)
+            print("🎉 SUCCESS! Script sent to Telegram successfully!")
+    except Exception as telegram_error:
+        print("Telegram send error:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 STEP 1: Python script has officially started inside Render!")
+    print("🚀 Bot starting script loop...")
     while True:
         check_and_run()
         print("😴 Sleeping for 7.5 minutes...")
