@@ -27,8 +27,9 @@ def get_latest_news():
         feed = feedparser.parse(feed_url)
         if feed.entries:
             first_entry = feed.entries[0]
-            title = first_entry.title
-            desc = first_entry.description if 'description' in first_entry else "Breaking global news."
+            first_entry = feed.entries[0]
+title = first_entry.get('title', 'Breaking News')
+
             return title, desc
     except Exception as e:
         print("RSS parsing error:", e)
