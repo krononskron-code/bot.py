@@ -5,7 +5,6 @@ import requests
 import http.server
 import threading
 import sys
-import random
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -22,45 +21,25 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    feeds = [
-        "https://un.org",
-        "https://nasa.gov",
-        "https://who.int"
-    ]
-    
-    random.shuffle(feeds)
-    
-    for feed_url in feeds:
-        try:
-            feed = feedparser.parse(feed_url)
-            if feed.entries and len(feed.entries) > 0:
-                first_entry = feed.entries[0]
-                title = first_entry.get('title', 'Global Alert')
-                desc = first_entry.get('description', 'New global development.')
-                
-                # Умный поиск точной ссылки на конкретную новость
-                link = None
-                if 'link' in first_entry and first_entry.link:
-                    link = first_entry.link
-                elif 'id' in first_entry and first_entry.id and (first_entry.id.startswith('http://') or first_entry.id.startswith('https://')):
-                    link = first_entry.id
-                elif 'links' in first_entry and len(first_entry.links) > 0:
-                    link = first_entry.links[0].get('href')
-                
-                # Если ничего не нашлось, даем ссылку на фид
-                if not link:
-                    link = feed_url
-                    
-                return title, desc, link
-        except Exception as e:
-            print(f"Error reading feed {feed_url}: {e}")
-            continue
+    # Используем открытый и гиперактивный поток мировых новостей науки
+    feed_url = "https://nytimes.com"
+    try:
+        feed = feedparser.parse(feed_url)
+        if feed.entries and len(feed.entries) > 0:
+            first_entry = feed.entries[0]
+            title = first_entry.get('title', '')
+            desc = first_entry.get('description', '')
             
-    return (
-        "Massive Space Discovery: NASA Detects Mysterious Signal From Deep Galaxy", 
-        "Astronomers using deep space telescopes have reported a highly unusual and repetitive signal coming from a distant star system.",
-        "https://nasa.gov"
-    )
+            # Извлекаем строго длинную уникальную ссылку на конкретную статью
+            link = first_entry.get('link', '')
+            if not link and 'links' in first_entry and len(first_entry.links) > 0:
+                link = first_entry.links[0].get('href', '')
+                
+            if title and link:
+                return title, desc, link
+    except Exception as e:
+        print("RSS parsing error:", e)
+    return None, None, None
 
 def generate_tiktok_script(title, text):
     prompt = (
@@ -83,18 +62,7 @@ def generate_tiktok_script(title, text):
             return response.text
     except Exception as e:
         print("AI Error:", e)
-    
-    return (
-        "🔥 **ХУК** 🔥\n"
-        "[ВИЗУАЛ: Скриншот шокирующего космического заголовка статьи]\n"
-        "Вы не поверите, что только что обнаружили ученые! НАСА официально зафиксировало загадочный сигнал из глубокого космоса.\n\n"
-        "🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
-        "[ВИЗУАЛ: Фото гигантского космического телескопа или далекой сияющей галактики]\n"
-        "Астрономы сообщают, что этот повторяющийся сигнал исходит от далекой звездной системы и не похож ни на одно известное природное явление.\n\n"
-        "🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
-        "[ВИЗУАЛ: Плашка с надписью 'ПОДПИШИСЬ']\n"
-        "Неужели мы наконец нашли доказательства существования другой жизни? Подписывайтесь на канал, чтобы следить за развитием этой космической тайны!"
-    )
+    return "Ошибка ИИ при генерации текста."
 
 def check_and_run():
     global LAST_TITLE
@@ -120,9 +88,9 @@ def check_and_run():
             else:
                 bot.send_message(CHANNEL_ID, message_text)
                 
-            print("🎉 SUCCESS! Mixed script with precise link sent!")
+            print("🎉 SUCCESS! Real news with deep link sent!")
         else:
-            print("No new unique stories found.")
+            print("No new unique stories found right now.")
             
     except Exception as telegram_error:
         print("Telegram send error:", telegram_error)
