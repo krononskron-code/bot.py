@@ -18,7 +18,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 def get_latest_news():
     feed_url = "https://nytimes.com"
     feed = feedparser.parse(feed_url)
-    if feed.entries:
+    if feed.entries and len(feed.entries) > 0:
         first_entry = feed.entries[0]
         title = first_entry.get('title', 'Breaking News')
         desc = first_entry.get('description', 'Breaking global news.')
