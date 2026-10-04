@@ -43,19 +43,20 @@ def generate_tiktok_script(title, text):
     return f"New Event: {title}"
 
 def check_and_run():
-    title, summary = get_latest_news()
-    print("Checking news feed... Found title:", title)
-    if title:
-        script = generate_tiktok_script(title, summary)
-        message_text = f"🚨 **NEW TIKTOK SCRIPT** 🚨\n\n{script}"
-        bot.send_message(CHANNEL_ID, message_text, parse_mode="Markdown")
-        print("Script sent to Telegram successfully!")
+    try:
+        title, summary = get_latest_news()
+        print("Checking news feed... Found title:", title)
+        if title:
+            script = generate_tiktok_script(title, summary)
+            message_text = f"🚨 NEW TIKTOK SCRIPT 🚨\n\n{script}"
+            # Убран parse_mode, чтобы исключить ошибки форматирования Telegram
+            bot.send_message(CHANNEL_ID, message_text)
+            print("Script sent to Telegram successfully!")
+    except Exception as telegram_error:
+        print("Telegram send error:", telegram_error)
 
 if __name__ == "__main__":
     print("Bot starting script loop...")
     while True:
-        try:
-            check_and_run()
-        except Exception as main_error:
-            print("Main loop error:", main_error)
+        check_and_run()
         time.sleep(450)
