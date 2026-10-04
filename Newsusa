@@ -1,0 +1,66 @@
+import time
+import requests
+from bs4 import BeautifulSoup
+import telebot
+import google.generativeai as genai
+
+TELEGRAM_TOKEN = "8667861727:AAFu9e__XCjpr7p5I3wIvCD1W0liGuzo1HQR"
+CHANNEL_ID = "@news_dept"
+GEMINI_API_KEY = "AQ.Ab8RN6Jmvd9LamV4Dy2oBfZPH08eDR8dT06HCGHT4gl3pfByMw"
+
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-2.5-flash')
+LAST_TITLE = ""
+
+def get_latest_news():
+    url = "https://reutersagency.com"
+    try:
+        response = requests.get(url, timeout=15)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'xml')
+            first_item = soup.find('item')
+            if first_item:
+                title = first_item.find('title').text
+                desc = first_item.find('description').text if first_item.find('description') else "Breaking US news."
+                return title, desc
+    except Exception as e:
+        print("Scraping error:", e)
+    return None, None
+
+def generate_tiktok_script(title, text):
+    prompt = (
+        f"You are a viral US TikTok news reporter. Rewrite this breaking event into a 1-minute script. "
+        f"Format: Green Screen. Use extreme dynamic hooks at the beginning. "
+        f"CRITICAL: Use Algospeak to completely bypass US TikTok censorship (replace sensitive letters with symbols like w@r, d€@th, p0litics, @rrest, b@nned). "
+        f"Structure the final output into: 1. Voiceover 2. On-screen text 3. Visuals. "
+        f"Maintain an objective, neutral reporter tone. News Title: {title}. Details: {text}"
+    )
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"New Event: {title}"
+
+def check_and_run():
+    global LAST_TITLE
+    title, summary = get_latest_news()
+    print(f"Checking Reuters Feed... Current Title: {title}")
+    
+    if title and title != LAST_TITLE:
+        LAST_TITLE = title
+        script = generate_tiktok_script(title, summary)
+        message_text = f"🚨 **NEW TIKTOK SCRIPT** 🚨\n\n{script}"
+        bot.send_message(CHANNEL_ID, message_text, parse_mode="Markdown")
+        print("Script sent to Telegram successfully!")
+    else:
+        print("No new unique stories found right now.")
+
+if __name__ == "__main__":
+    print("Bot starting script loop...")
+    while True:
+        try:
+            check_and_run()
+        except Exception as main_error:
+            print("Main loop error:", main_error)
+        time.sleep(300)  # Проверка каждые 5 минут
