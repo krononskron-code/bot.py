@@ -5,12 +5,11 @@ import requests
 import http.server
 import threading
 import sys
-import xml.etree.ElementTree as ET
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# 🔐 Настройки бота
+# 🔐 Ваши настройки
 TELEGRAM_TOKEN = "8667861727:AAE1N_d5mQCRBeP7uayRIvsc5U6d2MyrmLA"
 CHANNEL_ID = "@news_dept"
 
@@ -30,29 +29,45 @@ def get_latest_news():
     try:
         response = requests.get(feed_url, headers=headers, timeout=15)
         if response.status_code == 200:
-            root = ET.fromstring(response.content)
-            items = root.findall('.//item')
-            if items and len(items) > 0:
-                first_entry = items[0]
+            text = response.text
+            
+            # Самый надежный способ: вырезаем первый блок <item> вручную по строкам
+            start_item = text.find("<item>")
+            end_item = text.find("</item>")
+            
+            if start_item != -1 and end_item != -1:
+                item_content = text[start_item:end_item]
                 
-                title_node = first_entry.find('title')
-                desc_node = first_entry.find('description')
-                link_node = first_entry.find('link')
-                
-                title = title_node.text.strip() if title_node is not None else ''
-                desc = desc_node.text.strip() if desc_node is not None else ''
-                link = link_node.text.strip() if link_node is not None else ''
+                # Пошагово вытягиваем значения тегов
+                def extract_tag(xml_data, tag_name):
+                    s_tag = xml_data.find(f"<{tag_name}>")
+                    e_tag = xml_data.find(f"</tag_name>")
+                    if s_tag == -1: # Пробуем с CDATA секцией, если есть
+                        s_tag = xml_data.find(f"<{tag_name}>")
+                    
+                    # Стандартный поиск границ текстового узла
+                    start_idx = xml_data.find(f"<{tag_name}>")
+                    if start_idx != -1:
+                        start_idx += len(f"<{tag_name}>")
+                        end_idx = xml_data.find(f"</{tag_name}>", start_idx)
+                        if end_idx != -1:
+                            val = xml_data[start_idx:end_idx]
+                            if "<![CDATA[" in val:
+                                val = val.replace("<![CDATA[", "").replace("]]>", "")
+                            return val.strip()
+                    return ""
+
+                title = extract_tag(item_content, "title")
+                desc = extract_tag(item_content, "description")
+                link = extract_tag(item_content, "link")
                 
                 if not link:
-                    guid_node = first_entry.find('guid')
-                    if guid_node is not None:
-                        link = guid_node.text.strip()
-                        
+                    link = extract_tag(item_content, "guid")
+                    
                 if title and link:
                     return title, desc, link
-                    
     except Exception as e:
-        print("Ошибка парсинга XML:", e)
+        print("Ошибка ручного извлечения XML:", e)
         
     return (
         "Nobel Prizes 2026: What to Know", 
@@ -77,17 +92,22 @@ def generate_tiktok_script(title, text):
         f"Новость: {title}.\nДетали: {text}"
     )
     
-    # ИСПРАВЛЕНО: Используем максимально стабильный и быстрый эндпоинт текстовой генерации Pollinations без лишних надстроек
-    api_url = f"https://pollinations.ai{requests.utils.quote(prompt)}"
-    
+    # Стабильный POST-эндпоинт с быстрой текстовой моделью p1
+    api_url = "https://pollinations.ai"
+    payload = {
+        "model": "p1",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
     try:
-        response = requests.get(api_url, timeout=30)
-        if response.status_code == 200 and response.text:
-            return response.text
+        response = requests.post(api_url, json=payload, timeout=30)
+        if response.status_code == 200:
+            ai_text = response.json()['choices']['message']['content']
+            if ai_text:
+                return ai_text
     except Exception as e:
-        print("Ошибка ИИ:", e)
+        print("Ошибка ИИ API:", e)
         
-    # Динамическая заглушка, которая подставит реальный заголовок, если ИИ совсем не ответит
     return (
         f"📌 TIKTOK TITLE: Nobel Prizes 2026! 🏅\n\n"
         f"🔥 **ХУК** 🔥\n"
@@ -105,7 +125,7 @@ def generate_tiktok_script(title, text):
 def check_and_run():
     try:
         title, summary, link = get_latest_news()
-        print(f"Парсинг XML успешен. Новость: {title}")
+        print(f"Успешно обработан XML. Ссылка: {link}")
         
         script = generate_tiktok_script(title, summary)
         
@@ -128,7 +148,7 @@ def check_and_run():
         print("Telegram send error:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Бот запущен с обновленным ИИ-модулем...")
+    print("🚀 Бот запущен на строковом поиске подстрок...")
     while True:
         check_and_run()
         time.sleep(450)
