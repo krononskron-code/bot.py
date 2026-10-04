@@ -5,6 +5,7 @@ import requests
 import http.server
 import threading
 import sys
+import random
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -21,21 +22,34 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
-    feed_url = "https://who.int"
-    try:
-        feed = feedparser.parse(feed_url)
-        if feed.entries and len(feed.entries) > 0:
-            first_entry = feed.entries[0]
-            title = first_entry.get('title', 'Global Alert')
-            desc = first_entry.get('description', 'New global health development.')
-            link = first_entry.get('link', 'https://who.int')
-            return title, desc, link
-    except Exception as e:
-        print("RSS parsing error:", e)
+    # Список из 3 стабильных и открытых мировых источников (ООН, НАСА, ВОЗ)
+    feeds = [
+        "https://un.org",
+        "https://nasa.gov",
+        "https://who.int"
+    ]
+    
+    # Перемешиваем источники, чтобы бот проверял разные сферы
+    random.shuffle(feeds)
+    
+    for feed_url in feeds:
+        try:
+            feed = feedparser.parse(feed_url)
+            if feed.entries and len(feed.entries) > 0:
+                first_entry = feed.entries[0]
+                title = first_entry.get('title', 'Global Alert')
+                desc = first_entry.get('description', 'New global development.')
+                link = first_entry.get('link', 'https://google.com')
+                return title, desc, link
+        except Exception as e:
+            print(f"Error reading feed {feed_url}: {e}")
+            continue
+            
+    # Заглушка на самый крайний случай
     return (
-        "Massive Tech Discovery: New AI System Passes Human Intelligence Test", 
-        "Scientists in Silicon Valley have reported a major breakthrough.",
-        "https://google.com"
+        "Massive Space Discovery: NASA Detects Mysterious Signal From Deep Galaxy", 
+        "Astronomers using deep space telescopes have reported a highly unusual and repetitive signal coming from a distant star system.",
+        "https://nasa.gov"
     )
 
 def generate_tiktok_script(title, text):
@@ -54,7 +68,6 @@ def generate_tiktok_script(title, text):
     )
     api_url = "https://pollinations.ai"
     try:
-        # Используем правильный POST-запрос с JSON, чтобы ИИ не присылал HTML-код сайта
         response = requests.post(api_url, json={"messages": [{"role": "user", "content": prompt}]}, timeout=25)
         if response.status_code == 200:
             return response.text
@@ -63,14 +76,14 @@ def generate_tiktok_script(title, text):
     
     return (
         "🔥 **ХУК** 🔥\n"
-        "[ВИЗУАЛ: Скриншот шокирующего заголовка новостной статьи]\n"
-        "Вы не поверите, что только что произошло! Ученые официально подтвердили масштабное событие, которое потрясло весь мир.\n\n"
+        "[ВИЗУАЛ: Скриншот шокирующего космического заголовка статьи]\n"
+        "Вы не поверите, что только что обнаружили ученые! НАСА официально зафиксировало загадочный сигнал из глубокого космоса.\n\n"
         "🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
-        "[ВИЗУАЛ: Фото футуристичного суперкомпьютера]\n"
-        "Новый искусственный интеллект полностью прошел тест на человеческий разум. Это масштабное технологическое открытие может полностью изменить все, что мы знаем о нашей повседневной жизни.\n\n"
+        "[ВИЗУАЛ: Фото гигантского космического телескопа или далекой сияющей галактики]\n"
+        "Астрономы сообщают, что этот повторяющийся сигнал исходит от далекой звездной системы и не похож ни на одно известное природное явление.\n\n"
         "🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
         "[ВИЗУАЛ: Плашка с надписью 'ПОДПИШИСЬ']\n"
-        "Это событие точно изменит наше будущее навсегда. Подписывайтесь на канал, чтобы первыми узнавать о главных мировых сенсациях!"
+        "Неужели мы наконец нашли доказательства существования другой жизни? Подписывайтесь на канал, чтобы следить за развитием этой космической тайны!"
     )
 
 def check_and_run():
@@ -97,7 +110,7 @@ def check_and_run():
             else:
                 bot.send_message(CHANNEL_ID, message_text)
                 
-            print("🎉 SUCCESS! Fixed script sent!")
+            print("🎉 SUCCESS! Mixed script sent successfully!")
         else:
             print("No new unique stories found.")
             
