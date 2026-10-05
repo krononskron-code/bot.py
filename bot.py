@@ -12,7 +12,7 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 # 🔐 Настройки Telegram
-TELEGRAM_TOKEN = "8667861727:AAE1N_d5mQCRBeP7uayRIvsc5U6d2MyrmLA"
+TELEGRAM_TOKEN = "8667861727:AAF2sqRvSDqfOlGEMdcCLjp9dfYRp77QSUs"
 CHANNEL_ID = "@news_dept"
 DB_FILE = "last_news.txt" 
 
