@@ -6,7 +6,6 @@ import telebot
 import re
 import http.server
 import threading
-import xml.etree.ElementTree as ET
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -41,41 +40,53 @@ def run_web_server():
 # Запускаем сервер в параллельном потоке, чтобы он не мешал основному циклу бота
 threading.Thread(target=run_web_server, daemon=True).start()
 
-def get_latest_news():
-    """Парсинг свежей космической новости из открытого русскоязычного фида"""
-    feed_url = "https://livejournal.com"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+def google_translate(text, target_lang="ru"):
+    """Надежный POST-переводчик на русский язык"""
     try:
-        response = requests.get(feed_url, headers=headers, timeout=15)
+        if not text:
+            return ""
+        url = "https://googleapis.com"
+        params = {"client": "gtx", "sl": "en", "tl": target_lang, "dt": "t"}
+        response = requests.post(url, params=params, data={"q": text}, timeout=10)
         if response.status_code == 200:
-            root = ET.fromstring(response.content)
-            items = root.findall('.//item')
-            if items and len(items) > 0:
-                first_entry = items[0]
-                
-                title_node = first_entry.find('title')
-                desc_node = first_entry.find('description')
-                link_node = first_entry.find('link')
-                
-                title = title_node.text.strip() if title_node is not None else ''
-                desc = desc_node.text.strip() if desc_node is not None else ''
-                link = link_node.text.strip() if link_node is not None else ''
-                
-                # ИСПРАВЛЕНО: Убрана опечатка с переменной tf, ломавшая парсинг XML
-                if desc:
-                    desc = re.sub(r'<[^>]+>', '', desc)
-                    desc = desc.replace('&nbsp;', ' ').strip()[:300]
-                
-                if title and link:
-                    return title, desc, link
+            result = response.json()
+            if result and result[0]:
+                return "".join([chunk[0] for chunk in result[0] if chunk[0]]).strip()
     except Exception as e:
-        print("Ошибка разбора стабильного XML:", e)
-    
-    # Сверхнадежный резервный вариант (ссылка длинная, рабочая и на русском!)
+        print("Ошибка локального переводчика Google POST:", e)
+    return text
+
+def get_latest_news():
+    """Получение данных о последнем запуске SpaceX через официальный API без блокировок"""
+    api_url = "https://spacexdata.com"
+    try:
+        response = requests.get(api_url, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Вытягиваем название миссии, детали и прямую ссылку на трансляцию
+            title = f"SpaceX Launch Mission: {data.get('name', 'New Launch')}"
+            desc = data.get('details', '')
+            if not desc:
+                desc = "SpaceX successfully completed another historic orbital deployment."
+                
+            links = data.get('links', {})
+            link = links.get('webcast', '') # Прямая ссылка на трансляцию YouTube
+            if not link:
+                link = links.get('article', 'https://spacex.com')
+                
+            if title and link:
+                # Переводим технические детали на русский язык
+                ru_title = google_translate(title)
+                ru_desc = google_translate(desc)
+                return ru_title, ru_desc, link
+    except Exception as e:
+        print("Ошибка запроса к SpaceX API:", e)
+        
     return (
-        "Обнаружена новая гигантская экзопланета у далекой звезды",
-        "Астрономы подтвердили открытие уникальной планеты-гиганта, год на которой длится всего несколько земных дней.",
-        "https://livejournal.com"
+        "Запуск космического корабля Starship завершился успешным развертыванием",
+        "Компания SpaceX провела успешные испытания и вывела на орбиту новую партию полезной нагрузки, подтвердив стабильность систем.",
+        "https://spacex.com/launches/"
     )
 
 def generate_tiktok_script(title, text):
@@ -89,10 +100,10 @@ def generate_tiktok_script(title, text):
         f"2. 🔥 ХУК (Шокирующее начало на 1 короткое предложение на русском языке)\n"
         f"3. 🎙️ ОСНОВНОЙ ТЕКСТ (Суть новости на русском языке. Буквально 2 простых предложения!)\n"
         f"4. 🎬 ЗАКЛЮЧЕНИЕ (Призыв к действию на 1 короткое предложение на русском языке)\n"
-        f"5. #️⃣ HASHTAGS (5-7 английских хэштегов по теме новости, добавь #space #breakingnews, #fyp)\n\n"
+        f"5. #️⃣ HASHTAGS (5-7 английских хэштегов по теме новости, добавь #space #spacex #breakingnews, #fyp)\n\n"
         f"ПРАВИЛА ОФОРМЛЕНИЯ:\n"
         f"- Перед каждым блоком (Хук, Текст, Заключение) добавь строчку '[ВИЗУАЛ: ...]' с описанием картинки на русском.\n"
-        f"- Текст пиши СТРОГО обычными русскими буквами. Никакого Algospeak и английских слов в blocks чтения.\n\n"
+        f"- Текст пиши СТРОГО обычными русскими буквами. Никакого Algospeak и английских слов в блоках чтения.\n\n"
         f"Новость: {title}.\nДетали: {text}"
     )
     
@@ -113,17 +124,17 @@ def generate_tiktok_script(title, text):
         print("Нейросеть занята, отдаем структурированный локальный шаблон.")
         
     return (
-        f"📌 TIKTOK TITLE: New Cosmic Discovery! 🌌\n\n"
+        f"📌 TIKTOK TITLE: New SpaceX Mission Success! 🚀\n\n"
         f"🔥 **ХУК** 🔥\n"
-        f"[ВИЗУАЛ: Открытый космос и далекая яркая звезда]\n"
-        f"Ученые только что обнаружили космический объект, который меняет наши представления о Вселенной!\n\n"
+        f"[ВИЗУАЛ: Запуск гигантской ракеты Илона Маска со стартовой площадки]\n"
+        f"Илон Маск снова сделал это! Только что завершилась масштабная космическая миссия!\n\n"
         f"🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
-        f"[ВИЗУАЛ: Анимированная панорама вращения гигантской планеты]\n"
-        f"Официально подтверждено новое открытие: {title}. Исследователи заявляют, что этот объект абсолютно уникален для нашей галактики.\n\n"
+        f"[ВИЗУАЛ: Разделение ступеней ракеты в верхних слоях атмосферы]\n"
+        f"Официально подтвержден новый запуск: {title}. В деталях отчета указано следующее: {text}.\n\n"
         f"🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
-        f"[ВИЗУАЛ: Интерактивная плашка 'ПОДПИШИСЬ']\n"
-        f"Подписывайтесь на канал, чтобы оперативно узнавать главные тайны Вселенной!\n\n"
-        f"#️⃣ HASHTAGS: #space #astronomy #news #breaking #trending #fyp"
+        f"[ВИЗУАЛ: Графика со стрелкой на кнопку подписаться]\n"
+        f"Подписывайтесь на канал, чтобы первыми видеть эксклюзивные кадры космических запусков!\n\n"
+        f"#️⃣ HASHTAGS: #spacex #elonmusk #space #news #breaking #fyp"
     )
 
 def check_and_run():
@@ -134,7 +145,7 @@ def check_and_run():
             return
 
         if link == LAST_PUBLISHED_LINK:
-            print("Новых космических новостей нет. Ожидаем...")
+            print("Новых космических миссий нет. Ожидаем...")
             return
 
         print(f"Публикуем новую статью: {title}")
@@ -153,8 +164,8 @@ def check_and_run():
         print("Ошибка отправки сообщения в Telegram:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Скрипт запущен в полноценном фоновом режиме...")
+    print("🚀 Скрипт запущен на шлюзе SpaceX API...")
     time.sleep(5)
     while True:
         check_and_run()
-        time.sleep(1800)  # Проверка стабильного фида каждые 30 минут
+        time.sleep(1800)  # Проверка фида каждые 30 минут
