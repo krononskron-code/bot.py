@@ -19,99 +19,59 @@ if not TELEGRAM_TOKEN:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 LAST_PUBLISHED_LINK = ""  # Внутренняя память процесса
 
-def clean_text_data(text):
-    """Очистка текста от мусора"""
-    if not text:
-        return ""
-    return text.strip()
-
-def google_translate(text, target_lang="ru"):
-    """Надежный POST-переводчик на русский язык"""
-    try:
-        if not text:
-            return ""
-        url = "https://googleapis.com"
-        params = {"client": "gtx", "sl": "en", "tl": target_lang, "dt": "t"}
-        response = requests.post(url, params=params, data={"q": text}, timeout=10)
-        if response.status_code == 200:
-            result = response.json()
-            if result and result:
-                return "".join([chunk for chunk in result if chunk]).strip()
-    except Exception as e:
-        print("Ошибка локального переводчика Google POST:", e)
-    return text
-
 def get_latest_news():
-    """Парсинг актуальной новости из NASA с помощью ElementTree с обработкой ссылок-атрибутов"""
-    feed_url = "https://nasa.gov"
+    """Парсинг свежей космической новости из открытого русскоязычного фида"""
+    feed_url = "https://livejournal.com"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         response = requests.get(feed_url, headers=headers, timeout=15)
         if response.status_code == 200:
-            # Разбираем XML структуру сайта через дерево элементов
             root = ET.fromstring(response.content)
-            
-            # Находим все блоки новостей <item>
             items = root.findall('.//item')
             if items and len(items) > 0:
                 first_entry = items[0]
                 
                 title_node = first_entry.find('title')
                 desc_node = first_entry.find('description')
-                
-                title = title_node.text if title_node is not None else ''
-                desc = desc_node.text if desc_node is not None else ''
-                link = ''
-                
-                # ИСПРАВЛЕНО: Проверяем стандартный текстовый тег <link>
                 link_node = first_entry.find('link')
-                if link_node is not None and link_node.text:
-                    link = link_node.text.strip()
-                    
-                # ИСПРАВЛЕНО: Если тег пустой (особенность фида NASA), ищем атрибуты типа <link href="..."> или guid
-                if not link or not link.startswith("http"):
-                    if link_node is not None:
-                        link = link_node.get('href', '').strip()
-                if not link or not link.startswith("http"):
-                    guid_node = first_entry.find('guid')
-                    if guid_node is not None and guid_node.text:
-                        link = guid_node.text.strip()
                 
-                title = clean_text_data(title)
-                desc = clean_text_data(desc)
-                link = clean_text_data(link)
+                title = title_node.text.strip() if title_node is not None else ''
+                desc = desc_node.text.strip() if desc_node is not None else ''
+                link = link_node.text.strip() if link_node is not None else ''
                 
-                # Если ссылка все равно пустая, страхуемся подразделом новостей, но не пустой главной!
-                if not link or not link.startswith("http"):
-                    link = "https://nasa.gov"
+                # Чистим текст описания от лишних HTML тегов, если они есть
+                desc = tf = re.sub(r'<[^>]+>', '', desc)[:300] if desc else ''
                 
-                if title:
-                    ru_title = google_translate(title)
-                    ru_desc = google_translate(desc)
-                    return ru_title, ru_desc, link
+                if title and link:
+                    return title, desc, link
     except Exception as e:
-        print("Ошибка при чтении фида NASA через ElementTree:", e)
+        print("Ошибка разбора стабильного XML:", e)
     
+    # Резервный вариант на случай сбоя сети (ссылка длинная и рабочая!)
     return (
-        "Марсоход НАСА обнаружил новые свидетельства существования древней воды",
-        "Ученые миссии подтвердили, что собранные образцы горных пород указывают на стабильное присутствие жидкой воды в прошлом.",
-        "https://nasa.gov"
+        "Обнаружена новая гигантская экзопланета у далекой звезды",
+        "Астрономы подтвердили открытие уникальной планеты-гиганта, год на которой длится всего несколько земных дней.",
+        "https://livejournal.com"
     )
 
 def generate_tiktok_script(title, text):
-    """Генерация HeyGen сценария через ИИ"""
+    """Генерация HeyGen сценария через ИИ на основе русского текста"""
     prompt = (
         f"Ты — профессиональный сценарист TikTok и эксперт по вирусным текстам для HeyGen.\n"
-        f"Твоя задача — взять новость ниже и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
-        f"КРИТИЧЕСКОЕ ТРЕБОВАНИЕ: Текст должен быть очень коротким, емким (максимум 70-90 слов)! Уложи суть в 3-4 коротких предложения. Избегай длинных фраз.\n\n"
+        f"Твоя задача — взять космическую новость ниже и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
+        f"КРИТИЧЕСКОЕ ТРЕБОВАНИЕ: Текст должен быть очень коротким, емким (максимум 70-90 слов на весь скрипт)! Уложи суть в 3-4 коротких предложения. Избегай длинных фраз. Зритель должен за 40 секунд понять, что случилось.\n\n"
         f"Разбей ответ ровно на 5 частей:\n"
-        f"1. 📌 TIKTOK TITLE (На английском)\n"
-        f"2. 🔥 ХУК (На русском)\n"
-        f"3. 🎙️ ОСНОВНОЙ ТЕКСТ (На русском)\n"
-        f"4. 🎬 ЗАКЛЮЧЕНИЕ (На русском)\n"
-        f"5. #️⃣ HASHTAGS\n\n"
-        f"Новость: {title}.\nДетали: {text}"
+        f"1. 📌 TIKTOK TITLE (Вирусное название видео СТРОГО НА АНГЛИЙСКОМ языке)\n"
+        f"2. 🔥 ХУК (Шокирующее начало на 1 короткое предложение на русском языке)\n"
+        f"3. 🎙️ ОСНОВНОЙ ТЕКСТ (Суть новости на русском языке. Буквально 2 простых предложения!)\n"
+        f"4. 🎬 ЗАКЛЮЧЕНИЕ (Призыв к действию на 1 короткое предложение на русском языке)\n"
+        f"5. #️⃣ HASHTAGS (5-7 английских хэштегов по теме новости, добавь #space #breakingnews, #fyp)\n\n"
+        f"ПРАВИЛА ОФОРМЛЕНИЯ:\n"
+        f"- Перед каждым блоком (Хук, Текст, Заключение) добавь строчку '[ВИЗУАЛ: ...]' с описанием картинки на русском.\n"
+        f"- Текст пиши СТРОГО обычными русскими буквами. Никакого Algospeak и английских слов в блоках чтения."
+        f"\n\nНовость: {title}.\nДетали: {text}"
     )
+    
     api_url = "https://pollinations.ai"
     headers = {'Content-Type': 'application/json'}
     payload = {
@@ -129,25 +89,25 @@ def generate_tiktok_script(title, text):
         print("Нейросеть занята, собираем русский шаблон локально.")
         
     return (
-        f"📌 TIKTOK TITLE: Fresh Space Discovery! 🌌\n\n"
+        f"📌 TIKTOK TITLE: New Cosmic Discovery! 🌌\n\n"
         f"🔥 **ХУК** 🔥\n"
-        f"[ВИЗУАЛ: Космический телескоп в глубоком космосе]\n"
-        f"Вы точно не ожидали услышать эти потрясающие новости от НАСА сегодня!\n\n"
+        f"[ВИЗУАЛ: Открытый космос и далекая яркая звезда]\n"
+        f"Ученые только что обнаружили объект, который ломает законы физики!\n\n"
         f"🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
-        f"[ВИЗУАЛ: Анимированная панорама далеких звезд]\n"
-        f"Официально объявлено: {title}. В деталях отчета указано следующее: {text}.\n\n"
+        f"[ВИЗУАЛ: Анимация вращения гигантской планеты]\n"
+        f"Официально подтверждено новое открытие: {title}. Исследователи заявляют, что этот объект уникален для нашей галактики.\n\n"
         f"🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
         f"[ВИЗУАЛ: Интерактивная плашка 'ПОДПИШИСЬ']\n"
-        f"Подписывайтесь на канал, чтобы первыми узнавать о главных тайнах нашей Вселенной!\n\n"
-        f"#️⃣ HASHTAGS: #nasa #space #news #breaking #trending #fyp"
+        f"Подписывайтесь на канал, чтобы оперативно узнавать главные тайны Вселенной!\n\n"
+        f"#️⃣ HASHTAGS: #space #astronomy #news #breaking #trending #fyp"
     )
 
 def check_and_run():
     global LAST_PUBLISHED_LINK
+    import re
     try:
         title, summary, link = get_latest_news()
         if not title or not link:
-            print("Лента пуста.")
             return
 
         if link == LAST_PUBLISHED_LINK:
@@ -170,7 +130,7 @@ def check_and_run():
         print("Telegram error:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Бот переведен в БОЕВОЙ режим работы...")
+    print("🚀 Бот переведен на стабильный русскоязычный фид космоса...")
     while True:
         check_and_run()
         time.sleep(1800)  # Проверка фида каждые 30 минут
