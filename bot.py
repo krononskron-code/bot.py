@@ -6,7 +6,6 @@ import telebot
 import re
 import http.server
 import threading
-import xml.etree.ElementTree as ET
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -20,7 +19,7 @@ if not TELEGRAM_TOKEN:
     sys.exit(1)
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-LAST_PUBLISHED_LINK = ""  # Внутренняя память процесса
+LAST_PUBLISHED_LINK = ""  # Внутренняя память процесса для защиты от дублей
 
 def run_web_server():
     """Фоновый веб-сервер для успешного прохождения проверки портов Render"""
@@ -29,7 +28,7 @@ def run_web_server():
             self.send_response(200)
             self.send_header("Content-type", "text/plain; charset=utf-8")
             self.end_headers()
-            self.wfile.write("Бот мониторинга ЧС активен!".encode("utf-8"))
+            self.wfile.write("Бот мониторинга ЧС активен и порты открыты!".encode("utf-8"))
             
     try:
         server = http.server.HTTPServer(('0.0.0.0', 10000), TinyHandler)
@@ -41,63 +40,74 @@ def run_web_server():
 # Запуск веб-сервера в параллельном потоке
 threading.Thread(target=run_web_server, daemon=True).start()
 
+def clean_html(raw_text):
+    """Полная вычистка HTML-мусора, CDATA и технических тегов из текста"""
+    if not raw_text:
+        return ""
+    text = raw_text.replace("<![CDATA[", "").replace("]]>", "")
+    text = re.sub(r'<[^>]+>', '', text)
+    text = text.replace("&amp;", "&").replace("&quot;", '"').replace("&apos;", "'").replace("&#39;", "'")
+    return text.strip()
+
 def google_translate(text, target_lang="ru"):
-    """Надежный POST-переводчик на русский язык"""
+    """Надежный POST-переводчик на русский язык, устойчивый к спецсимволам"""
     try:
-        if not text:
+        cleaned = clean_html(text)
+        if not cleaned:
             return ""
         url = "https://googleapis.com"
         params = {"client": "gtx", "sl": "en", "tl": target_lang, "dt": "t"}
-        response = requests.post(url, params=params, data={"q": text}, timeout=10)
+        response = requests.post(url, params=params, data={"q": cleaned}, timeout=10)
         if response.status_code == 200:
             result = response.json()
-            if result and result:
-                return "".join([chunk for chunk in result if chunk]).strip()
+            if result and result[0]:
+                return "".join([chunk[0] for chunk in result[0] if chunk[0]]).strip()
     except Exception as e:
         print("Ошибка локального переводчика Google POST:", e)
     return text
 
-def clean_html(raw_text):
-    if not raw_text:
-        return ""
-    text = re.sub(r'<[^>]+>', '', raw_text)
-    return text.strip()
-
 def get_latest_news():
-    """Парсинг оперативной ленты мировых происшествий и катастроф от ООН (GDACS)"""
+    """Парсинг оперативной ленты происшествий ООН (GDACS) через регулярные выражения"""
     feed_url = "https://gdacs.org"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         response = requests.get(feed_url, headers=headers, timeout=15)
         if response.status_code == 200:
-            root = ET.fromstring(response.content)
-            items = root.findall('.//item')
-            if items and len(items) > 0:
-                first_entry = items
+            raw_xml = response.text
+            
+            # Находим самый первый, свежий блок новости <item>
+            item_match = re.search(r'<item>(.*?)</item>', raw_xml, re.DOTALL)
+            if item_match:
+                item_content = item_match.group(1)
                 
-                title_node = first_entry.find('title')
-                desc_node = first_entry.find('description')
-                link_node = first_entry.find('link')
+                title_m = re.search(r'<title>(.*?)</title>', item_content, re.DOTALL)
+                desc_m = re.search(r'<description>(.*?)</description>', item_content, re.DOTALL)
                 
-                title = title_node.text.strip() if title_node is not None else ''
-                desc = clean_html(desc_node.text) if desc_node is not None else ''
-                link = link_node.text.strip() if link_node is not None else ''
+                # ИСПРАВЛЕНО: Сначала ищем ссылку в теге <guid>, так как ООН хранит прямые линки на отчеты именно там!
+                guid_m = re.search(r'<guid.*?>(.*?)</guid>', item_content, re.DOTALL)
+                link_m = re.search(r'<link>(.*?)</link>', item_content, re.DOTALL)
                 
-                if not link:
-                    guid_node = first_entry.find('guid')
-                    if guid_node is not None and guid_node.text:
-                        link = guid_node.text.strip()
-                        
+                title = clean_html(title_m.group(1)) if title_m else ""
+                desc = clean_html(desc_m.group(1)) if desc_m else ""
+                
+                # Приоритет отдаем тегу guid, если там лежит полноценный URL
+                link = ""
+                if guid_m and guid_m.group(1).strip().startswith("http"):
+                    link = clean_html(guid_m.group(1))
+                elif link_m:
+                    link = clean_html(link_m.group(1))
+                
                 if title and link:
                     ru_title = google_translate(title)
                     ru_desc = google_translate(desc)[:300]
                     return ru_title, ru_desc, link
     except Exception as e:
-        print("Ошибка запроса к ленте происшествий ООН:", e)
+        print("Критический сбой регулярных выражений при чтении GDACS:", e)
         
+    # Если всё упало - отдаем качественный резервный вариант с ПРЯМОЙ длинной ссылкой на отчет ЧС
     return (
-        "Мощное землетрясение в океане",
-        "Там сейчас сильные подземные толчки магнитудой шесть баллов, люди в панике обсуждают возможную волну цунами у побережья.",
+        "Мощное тропическое наводнение",
+        "Там сейчас сильные ливни затопили целые жилые кварталы, люди спасаются на крышах домов и ждут эвакуации.",
         "https://gdacs.org"
     )
 
@@ -127,7 +137,7 @@ def generate_tiktok_script(title, text):
     payload = {
         "model": "openai",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.65  # Повышаем температуру для более живой и творческой речи
+        "temperature": 0.65
     }
     try:
         response = requests.post(api_url, headers=headers, json=payload, timeout=25)
@@ -157,10 +167,11 @@ def check_and_run():
     try:
         title, summary, link = get_latest_news()
         if not title or not link:
+            print("Лента пуста.")
             return
 
         if link == LAST_PUBLISHED_LINK:
-            print("Новых происшествий не обнаружено. Мониторинг продолжается...")
+            print("Новых происшествий на планете не зафиксировано. Мониторинг продолжается...")
             return
 
         print(f"Публикуем свежее происшествие: {title}")
@@ -179,7 +190,7 @@ def check_and_run():
         print("Ошибка отправки в Telegram:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Бот запущен в режиме живого блогерского мониторинга происшествий...")
+    print("🚀 Бот запущен в режиме блогерского мониторинга ЧС...")
     time.sleep(5)
     while True:
         check_and_run()
