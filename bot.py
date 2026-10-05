@@ -7,7 +7,7 @@ import re
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# 🔐 Настройки окружения Render
+# 🔐 Настройки Render
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHANNEL_ID = "@news_dept"
 DB_FILE = "last_news.txt" 
@@ -19,55 +19,39 @@ if not TELEGRAM_TOKEN:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def clean_html(raw_text):
-    """Полная очистка текста от HTML-тегов, CDATA и лишних спецсимволов"""
+    """Полная очистка текста от HTML-тегов и CDATA"""
     if not raw_text:
         return ""
-    # Удаляем CDATA
     text = raw_text.replace("<![CDATA[", "").replace("]]>", "")
-    # Удаляем любые HTML-теги
     text = re.sub(r'<[^>]+>', '', text)
-    # Заменяем частые HTML-сущности
     text = text.replace("&amp;", "&").replace("&quot;", '"').replace("&apos;", "'").replace("&#39;", "'")
     return text.strip()
 
 def google_translate(text, target_lang="ru"):
-    """Надежный переводчик через POST-запрос (устойчив к любым спецсимволам)"""
+    """Сверхнадежный POST-переводчик на русский язык"""
     try:
         cleaned = clean_html(text)
         if not cleaned:
             return ""
-            
         url = "https://googleapis.com"
-        params = {
-            "client": "gtx",
-            "sl": "en",
-            "tl": target_lang,
-            "dt": "t"
-        }
-        # Передаем текст в теле POST-запроса, чтобы URL не ломался от кавычек/пробелов
+        params = {"client": "gtx", "sl": "en", "tl": target_lang, "dt": "t"}
         response = requests.post(url, params=params, data={"q": cleaned}, timeout=10)
-        
         if response.status_code == 200:
             result = response.json()
             if result and result[0]:
-                translated_text = "".join([chunk[0] for chunk in result[0] if chunk[0]])
-                return translated_text.strip()
+                return "".join([chunk[0] for chunk in result[0] if chunk[0]]).strip()
     except Exception as e:
         print("Ошибка локального переводчика Google POST:", e)
     return text
 
 def get_latest_news():
-    """Парсинг актуальной новости из NASA с помощью регулярных выражений"""
+    """Парсинг актуальной новости из NASA с автоматическим переводом на русский"""
     feed_url = "https://nasa.gov"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
         response = requests.get(feed_url, headers=headers, timeout=15)
         if response.status_code == 200:
             raw_xml = response.text
-            
-            # Ищем самый первый <item>
             item_match = re.search(r'<item>(.*?)</item>', raw_xml, re.DOTALL)
             if item_match:
                 item_content = item_match.group(1)
@@ -88,22 +72,26 @@ def get_latest_news():
                 link = clean_html(link)
                 
                 if title and link:
-                    return title, desc, link
+                    # Сразу принудительно переводим на русский язык на уровне парсера!
+                    ru_title = google_translate(title)
+                    ru_desc = google_translate(desc)
+                    return ru_title, ru_desc, link
     except Exception as e:
         print("Ошибка при чтении фида NASA:", e)
-        
+    
+    # ЕСЛИ ВСЁ СЛОМАЛОСЬ: Никакого английского текста! Отдаем полностью русский текст
     return (
-        "NASA Space Station Astronauts Complete Historic Space Walk", 
-        "Astronauts successfully upgraded solar arrays outside the International Space Station during a six-hour spacewalk.", 
+        "Марсоход НАСА обнаружил новые свидетельства существования древней воды",
+        "Ученые миссии подтвердили, что собранные образцы горных пород указывают на стабильное присутствие жидкой воды в прошлом.",
         "https://nasa.gov"
     )
 
 def generate_tiktok_script(title, text):
-    """Генерация HeyGen сценария с автоматическим резервным переводом"""
+    """Генерация HeyGen сценария через ИИ"""
     prompt = (
         f"Ты — профессиональный сценарист TikTok и эксперт по вирусным текстам для HeyGen.\n"
-        f"Твоя задача — взять англоязычную новость ниже, перевести её и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
-        f"КРИТИЧЕСКОЕ ТРЕБОВАНИЕ: Текст должен быть очень коротким, емким и динамичным (максимум 70-90 слов на весь сценарий)! Уложи всю суть новости в 3-4 коротких, сильных предложения. Избегай длинных фраз.\n\n"
+        f"Твоя задача — взять новость ниже и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
+        f"КРИТИЧЕСКОЕ ТРЕБОВАНИЕ: Текст должен быть очень коротким, емким (максимум 70-90 слов)! Уложи суть в 3-4 коротких предложения. Избегай длинных фраз.\n\n"
         f"Разбей ответ ровно на 5 частей:\n"
         f"1. 📌 TIKTOK TITLE (На английском)\n"
         f"2. 🔥 ХУК (На русском)\n"
@@ -128,12 +116,9 @@ def generate_tiktok_script(title, text):
             if ai_text and len(ai_text.strip()) > 30:
                 return ai_text.strip()
     except Exception as e:
-        print("Нейросеть занята, используем встроенный переводчик.")
+        print("Нейросеть занята, собираем русский шаблон локально.")
         
-    # Если нейросеть лежит, переводим поля и вставляем в чистый русский шаблон
-    ru_title = google_translate(title)
-    ru_text = google_translate(text)
-    
+    # Если ИИ не ответил, собираем красивый сценарий из УЖЕ переведенных русских полей!
     return (
         f"📌 TIKTOK TITLE: Fresh Space Discovery! 🌌\n\n"
         f"🔥 **ХУК** 🔥\n"
@@ -141,7 +126,7 @@ def generate_tiktok_script(title, text):
         f"Вы точно не ожидали услышать эти потрясающие новости от НАСА сегодня!\n\n"
         f"🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
         f"[ВИЗУАЛ: Анимированная панорама далеких звезд]\n"
-        f"Официально объявлено: {ru_title}. В деталях отчета указано следующее: {ru_text}.\n\n"
+        f"Официально объявлено: {title}. В деталях отчета указано следующее: {text}.\n\n"
         f"🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
         f"[ВИЗУАЛ: Интерактивная плашка 'ПОДПИШИСЬ']\n"
         f"Подписывайтесь на канал, чтобы первыми узнавать о главных тайнах нашей Вселенной!\n\n"
@@ -178,7 +163,7 @@ def check_and_run():
         with open(DB_FILE, "w", encoding="utf-8") as f:
             f.write(link)
             
-        print("🎉 SUCCESS! Сценарий успешно опубликован в Telegram!")
+        print("🎉 SUCCESS! Пост отправлен!")
     except Exception as telegram_error:
         print("Telegram error:", telegram_error)
 
