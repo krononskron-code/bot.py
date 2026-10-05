@@ -50,33 +50,45 @@ def google_translate(text, target_lang="ru"):
         response = requests.post(url, params=params, data={"q": text}, timeout=10)
         if response.status_code == 200:
             result = response.json()
-            if result and result[0]:
-                return "".join([chunk[0] for chunk in result[0] if chunk[0]]).strip()
+            if result and result:
+                return "".join([chunk for chunk in result if chunk]).strip()
     except Exception as e:
         print("Ошибка локального переводчика Google POST:", e)
     return text
 
 def get_latest_news():
-    """Получение данных о последнем запуске SpaceX через официальный API без блокировок"""
+    """Получение данных о последнем запуске SpaceX через официальный API"""
     api_url = "https://spacexdata.com"
     try:
         response = requests.get(api_url, timeout=15)
         if response.status_code == 200:
             data = response.json()
             
-            # Вытягиваем название миссии, детали и прямую ссылку на трансляцию
             title = f"SpaceX Launch Mission: {data.get('name', 'New Launch')}"
             desc = data.get('details', '')
             if not desc:
                 desc = "SpaceX successfully completed another historic orbital deployment."
                 
+            # ИСПРАВЛЕНО: Правильный разбор структуры ссылок SpaceX API
             links = data.get('links', {})
-            link = links.get('webcast', '') # Прямая ссылка на трансляцию YouTube
+            link = ""
+            
+            # 1. Пробуем взять прямую ссылку на YouTube-вебкаст
+            if isinstance(links, dict):
+                link = links.get('webcast', '')
+                # 2. Если webcast пустой, пробуем вытащить альтернативную статью
+                if not link:
+                    link = links.get('article', '')
+                # 3. Если и этого нет, собираем видео-ссылку по ID видео
+                if not link and links.get('youtube_id'):
+                    link = f"https://youtube.com{links.get('youtube_id')}"
+            
+            # Если вообще ничего не нашлось, даем точную ссылку на лог миссии по её ID
             if not link:
-                link = links.get('article', 'https://spacex.com')
+                mission_id = data.get('id', '')
+                link = f"https://spacex.com" if not mission_id else f"https://spacex.commission/?missionId={mission_id}"
                 
             if title and link:
-                # Переводим технические детали на русский язык
                 ru_title = google_translate(title)
                 ru_desc = google_translate(desc)
                 return ru_title, ru_desc, link
@@ -86,7 +98,7 @@ def get_latest_news():
     return (
         "Запуск космического корабля Starship завершился успешным развертыванием",
         "Компания SpaceX провела успешные испытания и вывела на орбиту новую партию полезной нагрузки, подтвердив стабильность систем.",
-        "https://spacex.com/launches/"
+        "https://spacex.com"
     )
 
 def generate_tiktok_script(title, text):
@@ -164,7 +176,7 @@ def check_and_run():
         print("Ошибка отправки сообщения в Telegram:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Скрипт запущен на шлюзе SpaceX API...")
+    print("🚀 Скрипт запущен. Ожидаем прохождения проверки портов Render...")
     time.sleep(5)
     while True:
         check_and_run()
