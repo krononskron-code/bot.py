@@ -3,6 +3,9 @@ import sys
 import time
 import requests
 import telebot
+import re
+import http.server
+import threading
 import xml.etree.ElementTree as ET
 
 sys.stdout.reconfigure(line_buffering=True)
@@ -18,6 +21,25 @@ if not TELEGRAM_TOKEN:
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 LAST_PUBLISHED_LINK = ""  # Внутренняя память процесса
+
+def run_web_server():
+    """Фоновый веб-сервер строго для прохождения проверки портов Render"""
+    class TinyHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write("Бот активен и работает!".encode("utf-8"))
+            
+    try:
+        server = http.server.HTTPServer(('0.0.0.0', 10000), TinyHandler)
+        print("Фоновый веб-сервер успешно запущен на порту 10000")
+        server.serve_forever()
+    except Exception as e:
+        print("Ошибка запуска веб-сервера:", e)
+
+# Запускаем сервер в параллельном потоке, чтобы он не мешал основному циклу бота
+threading.Thread(target=run_web_server, daemon=True).start()
 
 def get_latest_news():
     """Парсинг свежей космической новости из открытого русскоязычного фида"""
@@ -39,15 +61,17 @@ def get_latest_news():
                 desc = desc_node.text.strip() if desc_node is not None else ''
                 link = link_node.text.strip() if link_node is not None else ''
                 
-                # Чистим текст описания от лишних HTML тегов, если они есть
-                desc = tf = re.sub(r'<[^>]+>', '', desc)[:300] if desc else ''
+                # Чистим текст описания от лишних HTML тегов
+                if desc:
+                    desc = re.sub(r'<[^>]+>', '', desc)
+                    desc = desc.replace('&nbsp;', ' ').strip()[:300]
                 
                 if title and link:
                     return title, desc, link
     except Exception as e:
         print("Ошибка разбора стабильного XML:", e)
     
-    # Резервный вариант на случай сбоя сети (ссылка длинная и рабочая!)
+    # Сверхнадежный резервный вариант (ссылка длинная, рабочая и на русском!)
     return (
         "Обнаружена новая гигантская экзопланета у далекой звезды",
         "Астрономы подтвердили открытие уникальной планеты-гиганта, год на которой длится всего несколько земных дней.",
@@ -55,7 +79,7 @@ def get_latest_news():
     )
 
 def generate_tiktok_script(title, text):
-    """Генерация HeyGen сценария через ИИ на основе русского текста"""
+    """Генерация HeyGen сценария через ИИ на основе готового русского текста"""
     prompt = (
         f"Ты — профессиональный сценарист TikTok и эксперт по вирусным текстам для HeyGen.\n"
         f"Твоя задача — взять космическую новость ниже и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
@@ -68,8 +92,8 @@ def generate_tiktok_script(title, text):
         f"5. #️⃣ HASHTAGS (5-7 английских хэштегов по теме новости, добавь #space #breakingnews, #fyp)\n\n"
         f"ПРАВИЛА ОФОРМЛЕНИЯ:\n"
         f"- Перед каждым блоком (Хук, Текст, Заключение) добавь строчку '[ВИЗУАЛ: ...]' с описанием картинки на русском.\n"
-        f"- Текст пиши СТРОГО обычными русскими буквами. Никакого Algospeak и английских слов в блоках чтения."
-        f"\n\nНовость: {title}.\nДетали: {text}"
+        f"- Текст пиши СТРОГО обычными русскими буквами. Никакого Algospeak и английских слов в блоках чтения.\n\n"
+        f"Новость: {title}.\nДетали: {text}"
     )
     
     api_url = "https://pollinations.ai"
@@ -86,16 +110,16 @@ def generate_tiktok_script(title, text):
             if ai_text and len(ai_text.strip()) > 30:
                 return ai_text.strip()
     except Exception as e:
-        print("Нейросеть занята, собираем русский шаблон локально.")
+        print("Нейросеть занята, отдаем структурированный локальный шаблон.")
         
     return (
         f"📌 TIKTOK TITLE: New Cosmic Discovery! 🌌\n\n"
         f"🔥 **ХУК** 🔥\n"
         f"[ВИЗУАЛ: Открытый космос и далекая яркая звезда]\n"
-        f"Ученые только что обнаружили объект, который ломает законы физики!\n\n"
+        f"Ученые только что обнаружили космический объект, который меняет наши представления о Вселенной!\n\n"
         f"🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
         f"[ВИЗУАЛ: Анимация вращения гигантской планеты]\n"
-        f"Официально подтверждено новое открытие: {title}. Исследователи заявляют, что этот объект уникален для нашей галактики.\n\n"
+        f"Официально подтверждено новое открытие: {title}. Исследователи заявляют, что этот объект абсолютно уникален для нашей галактики.\n\n"
         f"🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
         f"[ВИЗУАЛ: Интерактивная плашка 'ПОДПИШИСЬ']\n"
         f"Подписывайтесь на канал, чтобы оперативно узнавать главные тайны Вселенной!\n\n"
@@ -104,14 +128,13 @@ def generate_tiktok_script(title, text):
 
 def check_and_run():
     global LAST_PUBLISHED_LINK
-    import re
     try:
         title, summary, link = get_latest_news()
         if not title or not link:
             return
 
         if link == LAST_PUBLISHED_LINK:
-            print("Новых новостей нет. Ожидаем следующий цикл...")
+            print("Новых космических новостей нет. Ожидаем...")
             return
 
         print(f"Публикуем новую статью: {title}")
@@ -125,12 +148,14 @@ def check_and_run():
         
         bot.send_message(CHANNEL_ID, message_text)
         LAST_PUBLISHED_LINK = link
-        print("🎉 SUCCESS! Сценарий успешно опубликован в Telegram!")
+        print("🎉 SUCCESS! Пост успешно доставлен в ваш Telegram-канал!")
     except Exception as telegram_error:
-        print("Telegram error:", telegram_error)
+        print("Ошибка отправки сообщения в Telegram:", telegram_error)
 
 if __name__ == "__main__":
-    print("🚀 Бот переведен на стабильный русскоязычный фид космоса...")
+    print("🚀 Скрипт запущен. Ожидаем прохождения проверки портов Render...")
+    # Даем серверу 5 секунд определиться с портами перед бесконечным циклом
+    time.sleep(5)
     while True:
         check_and_run()
-        time.sleep(1800)  # Проверка фида каждые 30 минут
+        time.sleep(1800)  # Проверка стабильного фида каждые 30 минут
