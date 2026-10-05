@@ -1,14 +1,14 @@
 import os
 import sys
-import xml.etree.ElementTree as ET
 import urllib.parse
 import requests
 import telebot
+import re
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# 🔐 Настройки берем из окружения Render
+# 🔐 Настройки окружения Render
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHANNEL_ID = "@news_dept"
 DB_FILE = "last_news.txt" 
@@ -20,20 +20,23 @@ if not TELEGRAM_TOKEN:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def google_translate(text, target_lang="ru"):
-    """Локальный переводчик текста"""
+    """Исправленный локальный переводчик с защитой от спецсимволов"""
     try:
-        url = f"https://googleapis.com{target_lang}&dt=t&q={urllib.parse.quote(text)}"
+        # Полностью очищаем текст от символов, которые ломают URL-запрос
+        clean_text = re.sub(r'[^\w\s\.\,\!\?\-]', '', text)
+        url = f"https://googleapis.com{target_lang}&dt=t&q={urllib.parse.quote(clean_text)}"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             result = response.json()
-            translated_chunks = [chunk for chunk in result if chunk]
-            return "".join(translated_chunks).strip()
+            if result and result[0]:
+                translated_text = "".join([chunk[0] for chunk in result[0] if chunk[0]])
+                return translated_text.strip()
     except Exception as e:
         print("Ошибка локального переводчика Google:", e)
     return text
 
 def get_latest_news():
-    """Парсинг актуальной новости из открытого фида NASA (без блокировок серверов)"""
+    """Парсинг актуальной новости из NASA с помощью сверхнадежных регулярных выражений"""
     feed_url = "https://nasa.gov"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
@@ -41,31 +44,38 @@ def get_latest_news():
     try:
         response = requests.get(feed_url, headers=headers, timeout=15)
         if response.status_code == 200:
-            root = ET.fromstring(response.content)
+            raw_xml = response.text
             
-            items = root.findall('.//item')
-            if items and len(items) > 0:
-                first_entry = items[0]
+            # Находим самый первый блок новости <item>
+            item_match = re.search(r'<item>(.*?)</item>', raw_xml, re.DOTALL)
+            if item_match:
+                item_content = item_match.group(1)
                 
-                title_node = first_entry.find('title')
-                desc_node = first_entry.find('description')
-                link_node = first_entry.find('link')
+                # Вытаскиваем значения тегов через регулярные выражения (это не ломается из-за синтаксиса XML)
+                title_m = re.search(r'<title>(.*?)</title>', item_content, re.DOTALL)
+                desc_m = re.search(r'<description>(.*?)</description>', item_content, re.DOTALL)
+                link_m = re.search(r'<link>(.*?)</link>', item_content, re.DOTALL)
                 
-                title = title_node.text.strip() if title_node is not None else ''
-                desc = desc_node.text.strip() if desc_node is not None else ''
-                link = link_node.text.strip() if link_node is not None else ''
+                title = title_m.group(1).strip() if title_m else ""
+                desc = desc_m.group(1).strip() if desc_m else ""
+                link = link_m.group(1).strip() if link_m else ""
                 
-                if not link:
-                    guid_node = first_entry.find('guid')
-                    if guid_node is not None and guid_node.text:
-                        link = guid_node.text.strip()
-                        
+                # Очистка от возможных оберток CDATA
+                for clean_target in [title, desc, link]:
+                    if "<![CDATA[" in clean_target:
+                        clean_target = clean_target.replace("<![CDATA Gaza [", "").replace("<![CDATA[", "").replace("]]>", "")
+                
+                if not link or not link.startswith("http"):
+                    guid_m = re.search(r'<guid.*?>(.*?)</guid>', item_content, re.DOTALL)
+                    if guid_m:
+                        link = guid_m.group(1).strip()
+                
                 if title and link:
                     return title, desc, link
     except Exception as e:
-        print("Ошибка разбора XML:", e)
+        print("Ошибка регулярных выражений при чтении фида NASA:", e)
         
-    # Надежная резервная новость, если даже NASA будет недоступно
+    # Качественный резервный вариант с ПРЯМОЙ рабочей ссылкой на подраздел новостей
     return (
         "NASA Space Station Astronauts Complete Historic Space Walk", 
         "Astronauts successfully upgraded solar arrays outside the International Space Station during a six-hour spacewalk.", 
@@ -111,7 +121,7 @@ def generate_tiktok_script(title, text):
         f"📌 TIKTOK TITLE: Fresh Space Discovery! 🌌\n\n"
         f"🔥 **ХУК** 🔥\n"
         f"[ВИЗУАЛ: Космический телескоп в глубоком космосе]\n"
-        f"Вы точно не ожидали услышать эти потрясающие новости от NASA сегодня!\n\n"
+        f"Вы точно не ожидали услышать эти потрясающие новости от НАСА сегодня!\n\n"
         f"🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
         f"[ВИЗУАЛ: Анимированная панорама далеких звезд]\n"
         f"Официально объявлено: {ru_title}. В деталях отчета указано следующее: {ru_text}.\n\n"
