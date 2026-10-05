@@ -1,6 +1,5 @@
 import os
 import sys
-import urllib.parse
 import requests
 import telebot
 import re
@@ -19,24 +18,46 @@ if not TELEGRAM_TOKEN:
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+def clean_html(raw_text):
+    """Полная очистка текста от HTML-тегов, CDATA и лишних спецсимволов"""
+    if not raw_text:
+        return ""
+    # Удаляем CDATA
+    text = raw_text.replace("<![CDATA[", "").replace("]]>", "")
+    # Удаляем любые HTML-теги
+    text = re.sub(r'<[^>]+>', '', text)
+    # Заменяем частые HTML-сущности
+    text = text.replace("&amp;", "&").replace("&quot;", '"').replace("&apos;", "'").replace("&#39;", "'")
+    return text.strip()
+
 def google_translate(text, target_lang="ru"):
-    """Исправленный локальный переводчик с защитой от спецсимволов"""
+    """Надежный переводчик через POST-запрос (устойчив к любым спецсимволам)"""
     try:
-        # Полностью очищаем текст от символов, которые ломают URL-запрос
-        clean_text = re.sub(r'[^\w\s\.\,\!\?\-]', '', text)
-        url = f"https://googleapis.com{target_lang}&dt=t&q={urllib.parse.quote(clean_text)}"
-        response = requests.get(url, timeout=10)
+        cleaned = clean_html(text)
+        if not cleaned:
+            return ""
+            
+        url = "https://googleapis.com"
+        params = {
+            "client": "gtx",
+            "sl": "en",
+            "tl": target_lang,
+            "dt": "t"
+        }
+        # Передаем текст в теле POST-запроса, чтобы URL не ломался от кавычек/пробелов
+        response = requests.post(url, params=params, data={"q": cleaned}, timeout=10)
+        
         if response.status_code == 200:
             result = response.json()
             if result and result[0]:
                 translated_text = "".join([chunk[0] for chunk in result[0] if chunk[0]])
                 return translated_text.strip()
     except Exception as e:
-        print("Ошибка локального переводчика Google:", e)
+        print("Ошибка локального переводчика Google POST:", e)
     return text
 
 def get_latest_news():
-    """Парсинг актуальной новости из NASA с помощью сверхнадежных регулярных выражений"""
+    """Парсинг актуальной новости из NASA с помощью регулярных выражений"""
     feed_url = "https://nasa.gov"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
@@ -46,36 +67,31 @@ def get_latest_news():
         if response.status_code == 200:
             raw_xml = response.text
             
-            # Находим самый первый блок новости <item>
+            # Ищем самый первый <item>
             item_match = re.search(r'<item>(.*?)</item>', raw_xml, re.DOTALL)
             if item_match:
                 item_content = item_match.group(1)
                 
-                # Вытаскиваем значения тегов через регулярные выражения (это не ломается из-за синтаксиса XML)
                 title_m = re.search(r'<title>(.*?)</title>', item_content, re.DOTALL)
                 desc_m = re.search(r'<description>(.*?)</description>', item_content, re.DOTALL)
                 link_m = re.search(r'<link>(.*?)</link>', item_content, re.DOTALL)
                 
-                title = title_m.group(1).strip() if title_m else ""
-                desc = desc_m.group(1).strip() if desc_m else ""
+                title = clean_html(title_m.group(1)) if title_m else ""
+                desc = clean_html(desc_m.group(1)) if desc_m else ""
                 link = link_m.group(1).strip() if link_m else ""
-                
-                # Очистка от возможных оберток CDATA
-                for clean_target in [title, desc, link]:
-                    if "<![CDATA[" in clean_target:
-                        clean_target = clean_target.replace("<![CDATA Gaza [", "").replace("<![CDATA[", "").replace("]]>", "")
                 
                 if not link or not link.startswith("http"):
                     guid_m = re.search(r'<guid.*?>(.*?)</guid>', item_content, re.DOTALL)
                     if guid_m:
                         link = guid_m.group(1).strip()
                 
+                link = clean_html(link)
+                
                 if title and link:
                     return title, desc, link
     except Exception as e:
-        print("Ошибка регулярных выражений при чтении фида NASA:", e)
+        print("Ошибка при чтении фида NASA:", e)
         
-    # Качественный резервный вариант с ПРЯМОЙ рабочей ссылкой на подраздел новостей
     return (
         "NASA Space Station Astronauts Complete Historic Space Walk", 
         "Astronauts successfully upgraded solar arrays outside the International Space Station during a six-hour spacewalk.", 
@@ -83,11 +99,11 @@ def get_latest_news():
     )
 
 def generate_tiktok_script(title, text):
-    """Генерация HeyGen сценария через Pollinations ИИ"""
+    """Генерация HeyGen сценария с автоматическим резервным переводом"""
     prompt = (
         f"Ты — профессиональный сценарист TikTok и эксперт по вирусным текстам для HeyGen.\n"
         f"Твоя задача — взять англоязычную новость ниже, перевести её и написать КРАТКИЙ, динамичный сценарий СТРОГО на русском языке.\n"
-        f"КРИТИЧЕСКОЕ ТРЕБОВАНИЕ: Текст должен быть очень коротким, емким и динамичным (максимум 70-90 слов на весь сценарий)! Уложи всю суть новости в 3-4 коротких, сильных предложения.\n\n"
+        f"КРИТИЧЕСКОЕ ТРЕБОВАНИЕ: Текст должен быть очень коротким, емким и динамичным (максимум 70-90 слов на весь сценарий)! Уложи всю суть новости в 3-4 коротких, сильных предложения. Избегай длинных фраз.\n\n"
         f"Разбей ответ ровно на 5 частей:\n"
         f"1. 📌 TIKTOK TITLE (На английском)\n"
         f"2. 🔥 ХУК (На русском)\n"
@@ -114,6 +130,7 @@ def generate_tiktok_script(title, text):
     except Exception as e:
         print("Нейросеть занята, используем встроенный переводчик.")
         
+    # Если нейросеть лежит, переводим поля и вставляем в чистый русский шаблон
     ru_title = google_translate(title)
     ru_text = google_translate(text)
     
