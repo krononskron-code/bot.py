@@ -4,10 +4,11 @@ import requests
 import telebot
 import re
 
+# Принудительный вывод логов в реальном времени
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-# 🔐 Настройки Render
+# 🔐 Настройки окружения Render
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHANNEL_ID = "@news_dept"
 DB_FILE = "last_news.txt" 
@@ -28,7 +29,7 @@ def clean_html(raw_text):
     return text.strip()
 
 def google_translate(text, target_lang="ru"):
-    """Сверхнадежный POST-переводчик на русский язык"""
+    """Надежный POST-переводчик на русский язык"""
     try:
         cleaned = clean_html(text)
         if not cleaned:
@@ -72,14 +73,12 @@ def get_latest_news():
                 link = clean_html(link)
                 
                 if title and link:
-                    # Сразу принудительно переводим на русский язык на уровне парсера!
                     ru_title = google_translate(title)
                     ru_desc = google_translate(desc)
                     return ru_title, ru_desc, link
     except Exception as e:
         print("Ошибка при чтении фида NASA:", e)
     
-    # ЕСЛИ ВСЁ СЛОМАЛОСЬ: Никакого английского текста! Отдаем полностью русский текст
     return (
         "Марсоход НАСА обнаружил новые свидетельства существования древней воды",
         "Ученые миссии подтвердили, что собранные образцы горных пород указывают на стабильное присутствие жидкой воды в прошлом.",
@@ -118,7 +117,6 @@ def generate_tiktok_script(title, text):
     except Exception as e:
         print("Нейросеть занята, собираем русский шаблон локально.")
         
-    # Если ИИ не ответил, собираем красивый сценарий из УЖЕ переведенных русских полей!
     return (
         f"📌 TIKTOK TITLE: Fresh Space Discovery! 🌌\n\n"
         f"🔥 **ХУК** 🔥\n"
@@ -140,15 +138,8 @@ def check_and_run():
             print("Лента пуста.")
             return
 
-        last_published = ""
-        if os.path.exists(DB_FILE):
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                last_published = f.read().strip()
-
-        if link == last_published:
-            print("Новость уже публиковалась. Пропускаем.")
-            return
-
+        # Для принудительного теста убираем временную блокировку по файлу, 
+        # чтобы бот гарантированно выплюнул пост при деплое
         print(f"Публикуем новую статью: {title}")
         script = generate_tiktok_script(title, summary)
         
@@ -159,11 +150,7 @@ def check_and_run():
         )
         
         bot.send_message(CHANNEL_ID, message_text)
-            
-        with open(DB_FILE, "w", encoding="utf-8") as f:
-            f.write(link)
-            
-        print("🎉 SUCCESS! Пост отправлен!")
+        print("🎉 SUCCESS! Пост успешно ушел в канал!")
     except Exception as telegram_error:
         print("Telegram error:", telegram_error)
 
