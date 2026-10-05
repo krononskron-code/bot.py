@@ -41,7 +41,7 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 def clean_html(raw_text):
-    """Полная вычистка HTML-мусора, CDATA и технических тегов из текста"""
+    """Полная вычистка HTML-мусора, CDATA и технических тегов из текста и ссылок"""
     if not raw_text:
         return ""
     text = raw_text.replace("<![CDATA[", "").replace("]]>", "")
@@ -60,8 +60,8 @@ def google_translate(text, target_lang="ru"):
         response = requests.post(url, params=params, data={"q": cleaned}, timeout=10)
         if response.status_code == 200:
             result = response.json()
-            if result and result[0]:
-                return "".join([chunk[0] for chunk in result[0] if chunk[0]]).strip()
+            if result and result:
+                return "".join([chunk for chunk in result if chunk]).strip()
     except Exception as e:
         print("Ошибка локального переводчика Google POST:", e)
     return text
@@ -83,21 +83,23 @@ def get_latest_news():
                 title_m = re.search(r'<title>(.*?)</title>', item_content, re.DOTALL)
                 desc_m = re.search(r'<description>(.*?)</description>', item_content, re.DOTALL)
                 
-                # ИСПРАВЛЕНО: Сначала ищем ссылку в теге <guid>, так как ООН хранит прямые линки на отчеты именно там!
+                # Ищем ссылку в тегах guid и link
                 guid_m = re.search(r'<guid.*?>(.*?)</guid>', item_content, re.DOTALL)
                 link_m = re.search(r'<link>(.*?)</link>', item_content, re.DOTALL)
                 
                 title = clean_html(title_m.group(1)) if title_m else ""
                 desc = clean_html(desc_m.group(1)) if desc_m else ""
                 
-                # Приоритет отдаем тегу guid, если там лежит полноценный URL
-                link = ""
-                if guid_m and guid_m.group(1).strip().startswith("http"):
-                    link = clean_html(guid_m.group(1))
+                # Извлекаем и ОБЯЗАТЕЛЬНО очищаем ссылку от CDATA оберток
+                raw_link = ""
+                if guid_m:
+                    raw_link = guid_m.group(1)
                 elif link_m:
-                    link = clean_html(link_m.group(1))
+                    raw_link = link_m.group(1)
                 
-                if title and link:
+                link = clean_html(raw_link)
+                
+                if title and link and link.startswith("http"):
                     ru_title = google_translate(title)
                     ru_desc = google_translate(desc)[:300]
                     return ru_title, ru_desc, link
