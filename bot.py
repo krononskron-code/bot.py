@@ -67,7 +67,7 @@ def google_translate(text, target_lang="ru"):
     return text
 
 def get_latest_news():
-    """Парсинг оперативной ленты происшествий ООН (GDACS) через регулярные выражения"""
+    """Парсинг оперативной ленты происшествий ООН (GDACS) с неуязвимым поиском тегов"""
     feed_url = "https://gdacs.org"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     try:
@@ -75,22 +75,23 @@ def get_latest_news():
         if response.status_code == 200:
             raw_xml = response.text
             
-            # Находим самый первый, свежий блок новости <item>
-            item_match = re.search(r'<item>(.*?)</item>', raw_xml, re.DOTALL)
+            # Находим самый первый блок новости <item>
+            item_match = re.search(r'<item>(.*?)</item>', raw_xml, re.DOTALL | re.IGNORECASE)
             if item_match:
                 item_content = item_match.group(1)
                 
-                title_m = re.search(r'<title>(.*?)</title>', item_content, re.DOTALL)
-                desc_m = re.search(r'<description>(.*?)</description>', item_content, re.DOTALL)
+                # ИСПРАВЛЕНО: Флаг re.IGNORECASE позволяет находить теги независимо от того, заглавные они или строчные
+                title_m = re.search(r'<title>(.*?)</title>', item_content, re.DOTALL | re.IGNORECASE)
+                desc_m = re.search(r'<description>(.*?)</description>', item_content, re.DOTALL | re.IGNORECASE)
                 
-                # Ищем ссылку в тегах guid и link
-                guid_m = re.search(r'<guid.*?>(.*?)</guid>', item_content, re.DOTALL)
-                link_m = re.search(r'<link>(.*?)</link>', item_content, re.DOTALL)
+                # ИСПРАВЛЕНО: Регулярное выражение для guid теперь игнорирует любые внутренние параметры вроде isPermaLink="false"
+                guid_m = re.search(r'<guid[^>]*>(.*?)</guid>', item_content, re.DOTALL | re.IGNORECASE)
+                link_m = re.search(r'<link[^>]*>(.*?)</link>', item_content, re.DOTALL | re.IGNORECASE)
                 
                 title = clean_html(title_m.group(1)) if title_m else ""
                 desc = clean_html(desc_m.group(1)) if desc_m else ""
                 
-                # Извлекаем и ОБЯЗАТЕЛЬНО очищаем ссылку от CDATA оберток
+                # Извлекаем и очищаем ссылку
                 raw_link = ""
                 if guid_m:
                     raw_link = guid_m.group(1)
@@ -106,7 +107,7 @@ def get_latest_news():
     except Exception as e:
         print("Критический сбой регулярных выражений при чтении GDACS:", e)
         
-    # Если всё упало - отдаем качественный резервный вариант с ПРЯМОЙ длинной ссылкой на отчет ЧС
+    # ИСПРАВЛЕНО: В резервный вариант прописана ПРЯМАЯ ДЛИННАЯ ссылка на глобальную карту текущих катастроф ООН
     return (
         "Мощное тропическое наводнение",
         "Там сейчас сильные ливни затопили целые жилые кварталы, люди спасаются на крышах домов и ждут эвакуации.",
