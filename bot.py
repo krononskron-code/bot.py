@@ -19,182 +19,125 @@ if not TELEGRAM_TOKEN:
     sys.exit(1)
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-LAST_PUBLISHED_LINK = ""  # Внутренняя память процесса для защиты от дублей
+LAST_PUBLISHED_LINK = ""  # Память бота для защиты от дубликатов
 
 def run_web_server():
-    """Фоновый веб-сервер для успешного прохождения проверки портов Render"""
+    """Фоновый веб-сервер для прохождения проверок портов Render"""
     class TinyHandler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.send_header("Content-type", "text/plain; charset=utf-8")
             self.end_headers()
-            self.wfile.write("Бот мониторинга ЧС активен и порты открыты!".encode("utf-8"))
-            
+            self.wfile.write("Мульти-новостной бот активен!".encode("utf-8"))
     try:
         server = http.server.HTTPServer(('0.0.0.0', 10000), TinyHandler)
-        print("Фоновый веб-сервер запущен на порту 10000")
         server.serve_forever()
     except Exception as e:
-        print("Ошибка запуска веб-сервера:", e)
+        print("Ошибка веб-сервера:", e)
 
-# Запуск веб-сервера в параллельном потоке
 threading.Thread(target=run_web_server, daemon=True).start()
 
-def clean_html(raw_text):
-    """Полная вычистка HTML-мусора, CDATA и технических тегов из текста и ссылок"""
-    if not raw_text:
-        return ""
+def clean_text(raw_text):
+    if not raw_text: return ""
     text = raw_text.replace("<![CDATA[", "").replace("]]>", "")
     text = re.sub(r'<[^>]+>', '', text)
-    text = text.replace("&amp;", "&").replace("&quot;", '"').replace("&apos;", "'").replace("&#39;", "'")
-    return text.strip()
+    return text.replace("&amp;", "&").replace("&quot;", '"').replace("&apos;", "'").strip()
 
-def google_translate(text, target_lang="ru"):
-    """Надежный POST-переводчик на русский язык, устойчивый к спецсимволам"""
+def google_translate(text):
     try:
-        cleaned = clean_html(text)
-        if not cleaned:
-            return ""
         url = "https://googleapis.com"
-        params = {"client": "gtx", "sl": "en", "tl": target_lang, "dt": "t"}
-        response = requests.post(url, params=params, data={"q": cleaned}, timeout=10)
-        if response.status_code == 200:
-            result = response.json()
-            if result and result:
-                return "".join([chunk for chunk in result if chunk]).strip()
-    except Exception as e:
-        print("Ошибка локального переводчика Google POST:", e)
+        params = {"client": "gtx", "sl": "en", "tl": "ru", "dt": "t"}
+        res = requests.post(url, params=params, data={"q": clean_text(text)}, timeout=10)
+        if res.status_code == 200:
+            return "".join([chunk for chunk in res.json() if chunk]).strip()
+    except:
+        pass
     return text
 
-def get_latest_news():
-    """Парсинг оперативной ленты происшествий ООН (GDACS) с неуязвимым поиском тегов"""
-    feed_url = "https://gdacs.org"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+def check_gdacs():
+    """Сканирование сайта происшествий ООН"""
     try:
-        response = requests.get(feed_url, headers=headers, timeout=15)
-        if response.status_code == 200:
-            raw_xml = response.text
-            
-            # Находим самый первый блок новости <item>
-            item_match = re.search(r'<item>(.*?)</item>', raw_xml, re.DOTALL | re.IGNORECASE)
-            if item_match:
-                item_content = item_match.group(1)
+        res = requests.get("https://gdacs.org", timeout=10)
+        if res.status_code == 200:
+            item = re.search(r'<item>(.*?)</item>', res.text, re.DOTALL | re.IGNORECASE)
+            if item:
+                cont = item.group(1)
+                title = re.search(r'<title>(.*?)</title>', cont, re.DOTALL | re.IGNORECASE)
+                desc = re.search(r'<description>(.*?)</description>', cont, re.DOTALL | re.IGNORECASE)
+                guid = re.search(r'<guid[^>]*>(.*?)</guid>', cont, re.DOTALL | re.IGNORECASE)
                 
-                # ИСПРАВЛЕНО: Флаг re.IGNORECASE позволяет находить теги независимо от того, заглавные они или строчные
-                title_m = re.search(r'<title>(.*?)</title>', item_content, re.DOTALL | re.IGNORECASE)
-                desc_m = re.search(r'<description>(.*?)</description>', item_content, re.DOTALL | re.IGNORECASE)
-                
-                # ИСПРАВЛЕНО: Регулярное выражение для guid теперь игнорирует любые внутренние параметры вроде isPermaLink="false"
-                guid_m = re.search(r'<guid[^>]*>(.*?)</guid>', item_content, re.DOTALL | re.IGNORECASE)
-                link_m = re.search(r'<link[^>]*>(.*?)</link>', item_content, re.DOTALL | re.IGNORECASE)
-                
-                title = clean_html(title_m.group(1)) if title_m else ""
-                desc = clean_html(desc_m.group(1)) if desc_m else ""
-                
-                # Извлекаем и очищаем ссылку
-                raw_link = ""
-                if guid_m:
-                    raw_link = guid_m.group(1)
-                elif link_m:
-                    raw_link = link_m.group(1)
-                
-                link = clean_html(raw_link)
-                
-                if title and link and link.startswith("http"):
-                    ru_title = google_translate(title)
-                    ru_desc = google_translate(desc)[:300]
-                    return ru_title, ru_desc, link
-    except Exception as e:
-        print("Критический сбой регулярных выражений при чтении GDACS:", e)
-        
-    # ИСПРАВЛЕНО: В резервный вариант прописана ПРЯМАЯ ДЛИННАЯ ссылка на глобальную карту текущих катастроф ООН
-    return (
-        "Мощное тропическое наводнение",
-        "Там сейчас сильные ливни затопили целые жилые кварталы, люди спасаются на крышах домов и ждут эвакуации.",
-        "https://gdacs.org"
-    )
+                t = google_translate(title.group(1)) if title else "Происшествие"
+                d = google_translate(desc.group(1))[:250] if desc else "Чрезвычайная ситуация"
+                l = clean_text(guid.group(1)) if guid else "https://gdacs.org"
+                return t, d, l, "🚨 ЭКСТРЕННЫЙ СЦЕНАРИЙ ЧС"
+    except: pass
+    return None
 
-def generate_tiktok_script(title, text):
-    """Генерация HeyGen сценария с простой, разговорной и эмоциональной речью человека"""
-    prompt = (
-        f"Ты — обычный блогер в TikTok, который только что наткнулся на шокирующие кадры в сети. "
-        f"Твоя задача — взять новость ниже и рассказать о ней простым, разговорным языком, эмоционально, "
-        f"как обычный человек рассказывает своим друзьям в устной речи. "
-        f"ЖЕСТКОЕ ТРЕБОВАНИЕ: Никакого официального тона, никаких канцеляризмов вроде 'зафиксировано', 'согласно отчетам ведомства', 'сейсмическая активность'. "
-        f"Используй живые разговорные фразы (например: 'Народ, вы видели это?', 'Там сейчас полная жесть', 'Просто посмотрите на эти кадры'). "
-        f"Текст должен быть ультра-коротким (максимум 65-85 слов)! Зритель должен за 30 секунд понять, какой кошмар случился и где.\n\n"
-        f"Разбей ответ ровно на 5 частей:\n"
-        f"1. 📌 TIKTOK TITLE (Эмоциональное название видео СТРОГО НА АНГЛИЙСКОМ языке, разговорный сленг)\n"
-        f"2. 🔥 ХУК (Шокирующее, цепляющее начало от первого лица на 1 короткое предложение на русском языке)\n"
-        f"3. 🎙️ ОСНОВНОЙ ТЕКСТ (Эмоциональный рассказ о том, что случилось, на русском языке. Буквально 2 простых разговорных предложения!)\n"
-        f"4. 🎬 ЗАКЛЮЧЕНИЕ (Призыв написать свое мнение в комментах на 1 короткое предложение на русском языке)\n"
-        f"5. #️⃣ HASHTAGS (5-7 английских хэштегов по теме, добавь #breakingnews #crazy #disaster #trending #fyp)\n\n"
-        f"ПРАВИЛА ОФОРМЛЕНИЯ:\n"
-        f"- Перед каждым блоком (Хук, Текст, Заключение) добавь строчку '[ВИЗУАЛ: ...]' с описанием реального видео очевидцев или карт на русском.\n"
-        f"- Текст пиши СТРОГО обычными русскими буквами. Никаких английских слов в блоках чтения."
-        f"\n\nДанные происшествия для пересказа: {title}.\nДетали: {text}"
-    )
-    
-    api_url = "https://pollinations.ai"
-    headers = {'Content-Type': 'application/json'}
-    payload = {
-        "model": "openai",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.65
-    }
+def check_spacex():
+    """Сканирование сайта космических миссий SpaceX"""
     try:
-        response = requests.post(api_url, headers=headers, json=payload, timeout=25)
-        if response.status_code == 200:
-            ai_text = response.json()['choices']['message']['content']
-            if ai_text and len(ai_text.strip()) > 30:
-                return ai_text.strip()
-    except Exception as e:
-        print("Нейросеть занята, отдаем разговорный локальный шаблон.")
-        
-    return (
-        f"📌 TIKTOK TITLE: GUYS THIS IS CRAZY INSANE! 🚨\n\n"
-        f"🔥 **ХУК** 🔥\n"
-        f"[ВИЗУАЛ: Блогер держится за голову на фоне карты с красной точкой]\n"
-        f"Ребята, вы вообще видели, что только что произошло? Я просто в шоке!\n\n"
-        f"🎙️ **ОСНОВНОЙ ТЕКСТ** 🎙️\n"
-        f"[ВИЗУАЛ: Реальные кадры очевидцев или трясущаяся камера]\n"
-        f"Там сейчас происходит полная жесть: {title}. В сети пишут, что ситуация очень опасная: {text}.\n\n"
-        f"🎬 **ЗАКЛЮЧЕНИЕ** 🎬\n"
-        f"[ВИЗУАЛ: Стрелка указывает на иконку комментариев]\n"
-        f"Напишите в комментариях, кто-то из вас сейчас находится рядом с этим местом?\n\n"
-        f"#️⃣ HASHTAGS: #breakingnews #crazy #disaster #news #global #fyp"
+        res = requests.get("https://spacexdata.com", timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            title = f"Космическая миссия SpaceX: {data.get('name', 'Запуск')}"
+            desc = data.get('details', 'Успешное выполнение космической программы и вывод нагрузки.')
+            
+            links = data.get('links', {})
+            link = links.get('webcast', '') if isinstance(links, dict) else ''
+            if not link and isinstance(links, dict): link = links.get('article', '')
+            if not link: link = "https://spacex.com"
+            
+            return google_translate(title), google_translate(desc)[:250], link, "🚀 КОСМИЧЕСКИЙ СЦЕНАРИЙ"
+    except: pass
+    return None
+
+def generate_tiktok_script(title, text, mode_name):
+    prompt = (
+        f"Ты — профессиональный блогер в TikTok. Твоя задача — взять новость ниже и написать "
+        f"разговорный, вирусный сценарий СТРОГО на русском языке от первого лица (максимум 65-85 слов на весь скрипт). "
+        f"Разбей ответ строго на блоки с пометками [ВИЗУАЛ: ...]: 1. Название на английском, 2. Хук, 3. Основной текст, 4. Заключение, 5. Хэштеги."
+        f"\n\nНовость: {title}.\nДетали: {text}"
     )
+    try:
+        payload = {"model": "openai", "messages": [{"role": "user", "content": prompt}]}
+        response = requests.post("https://pollinations.ai", json=payload, timeout=25)
+        if response.status_code == 200:
+            return response.json()['choices']['message']['content'].strip()
+    except: pass
+    
+    return f"📌 TITLE: Alert News!\n\n🔥 **ХУК** 🔥\n[ВИЗУАЛ: Блогер] Народ, вы видели это? Полный треш!\n\n🎙️ **ТЕКСТ** 🎙️\n[ВИЗУАЛ: Кадры] Короче, официально: {title}. В деталях пишут, что {text}.\n\n🎬 **ИТОГ** 🎬\n[ВИЗУАЛ: Слой] Что думаете? Пишите в комменты!"
 
 def check_and_run():
     global LAST_PUBLISHED_LINK
-    try:
-        title, summary, link = get_latest_news()
-        if not title or not link:
-            print("Лента пуста.")
-            return
-
+    
+    # Поочередно опрашиваем оба сайта. Кто первый выдал новую ссылку — тот и публикуется!
+    news_data = check_gdacs()
+    if not news_data:
+        news_data = check_spacex()
+        
+    if news_data:
+        title, summary, link, mode_tag = news_data
+        
         if link == LAST_PUBLISHED_LINK:
-            print("Новых происшествий на планете не зафиксировано. Мониторинг продолжается...")
+            print("Новых обновлений на сайтах нет. Мониторинг продолжается...")
             return
 
-        print(f"Публикуем свежее происшествие: {title}")
-        script = generate_tiktok_script(title, summary)
+        print(f"Найдена свежая новость! Публикуем: {title}")
+        script = generate_tiktok_script(title, summary, mode_tag)
         
         message_text = (
-            f"🎬 **РАЗГОВОРНЫЙ СЦЕНАРИЙ ДЛЯ TIKTOK (ПОД HEYGEN)** 🎬\n\n"
+            f"🎬 **{mode_tag} ДЛЯ TIKTOK (ПОД HEYGEN)** 🎬\n\n"
             f"{script}\n\n"
-            f"🔗 **Официальный первоисточник (ООН/GDACS):** {link}"
+            f"🔗 **Официальный первоисточник:** {link}"
         )
         
         bot.send_message(CHANNEL_ID, message_text)
         LAST_PUBLISHED_LINK = link
-        print("🎉 SUCCESS! Живой эмоциональный пост опубликован в Telegram!")
-    except Exception as telegram_error:
-        print("Ошибка отправки в Telegram:", telegram_error)
+        print("🎉 SUCCESS! Пост отправлен!")
 
 if __name__ == "__main__":
-    print("🚀 Бот запущен в режиме блогерского мониторинга ЧС...")
+    print("🚀 Мульти-мониторинг запущен на ветке main...")
     time.sleep(5)
     while True:
         check_and_run()
-        time.sleep(900)  # Проверка глобальных катастроф каждые 15 минут
+        time.sleep(900)  # Проверка сайтов каждые 15 минут
